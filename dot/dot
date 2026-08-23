@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""Minimal DOT audio/video bring-up."""
+
+import argparse
+import os
+from pathlib import Path
+import select
+import shutil
+import subprocess
+
+import console
+
+HERE = Path(__file__).resolve().parent
+
+
+def start_ffmpeg(output: Path, monitor: bool):
+    video_read, video_write = os.pipe()
+    audio_read, audio_write = os.pipe()
+    muxer, destination = "mpegts", str(output)
+    if monitor:
+        muxer = "tee"
+        destination = f"[f=mpegts]{output}|[f=mpegts]udp://127.0.0.1:23456"
+
+    command = [
+        "ffmpeg", "-hide_banner", "-loglevel", "warning", "-y",
+        "-probesize", "32", "-analyzeduration", "0",
+        "-thread_queue_size", "8", "-f", "rawvideo", "-pixel_format", "rgb555le",
+        "-video_size", f"{console.OUTPUT_WIDTH}x{console.OUTPUT_HEIGHT}",
+        "-framerate", str(console.FPS),
+        "-i", f"pipe:{video_read}",
+        "-probesize", "32", "-analyzeduration", "0",
+        "-thread_queue_size", "8", "-f", "s16le", "-ar", str(console.AUDIO_RATE),
+        "-ac", "2", "-i", f"pipe:{audio_read}",
+        "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "veryfast",
+        "-tune", "zerolatency", "-pix_fmt", "yuv420p", "-g", str(console.FPS),
+        "-c:a", "s302m", "-strict", "experimental", "-f", muxer, destination,
+    ]
+    try:
+        process = subprocess.Popen(command, pass_fds=(video_read, audio_read))
+    finally:
+        os.close(video_read)
+        os.close(audio_read)
+    os.set_blocking(video_write, False)
+    os.set_blocking(audio_write, False)
+    return process, video_write, audio_write
+
+
+def write_frame(video_fd: int, audio_fd: int, video: bytes, audio: bytes) -> None:
+    """Write both inputs without allowing either pipe to block the other."""
+    video_position = 0
+    audio_position = 0
+    while video_position < len(video) or audio_position < len(audio):
+        wanted = []
+        if video_position < len(video):
+            wanted.append(video_fd)
+        if audio_position < len(audio):
+            wanted.append(audio_fd)
+        _, ready, _ = select.select([], wanted, [])
+        if video_fd in ready:
+            video_position += os.write(video_fd, video[video_position:])
+        if audio_fd in ready:
+            audio_position += os.write(audio_fd, audio[audio_position:])
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-o", "--output", type=Path, default=HERE / "dot.ts")
+    parser.add_argument("--audio", type=Path,
+                        default=HERE / "Daisy_Bell_sung_by_Edward_M._Favor_denoised.raw")
+    parser.add_argument("--monitor", action="store_true")
+    parser.add_argument("--frames", type=int, help="stop after this many video frames")
+    args = parser.parse_args()
+
+    if args.frames is not None and args.frames < 1:
+        parser.error("--frames must be greater than zero")
+
+    for program in (("ffmpeg", "vlc") if args.monitor else ("ffmpeg",)):
+        if not shutil.which(program):
+            parser.error(f"required program not found: {program}")
+
+    audio = args.audio.read_bytes()
+    if not audio or len(audio) % 4:
+        parser.error("audio must be 48 kHz s16le stereo PCM")
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg, video_fd, audio_fd = start_ffmpeg(args.output, args.monitor)
+    vlc = subprocess.Popen(["vlc", "udp://@127.0.0.1:23456"]) if args.monitor else None
+
+    try:
+        console.run(
+            audio,
+            args.frames,
+            lambda video, sound: write_frame(video_fd, audio_fd, video, sound),
+        )
+    except (BrokenPipeError, KeyboardInterrupt):
+        pass
+    finally:
+        os.close(video_fd)
+        os.close(audio_fd)
+        ffmpeg.wait()
+        if vlc and vlc.poll() is None:
+            vlc.terminate()
+            vlc.wait()
+
+    return ffmpeg.returncode
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
