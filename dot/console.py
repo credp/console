@@ -12,6 +12,8 @@ FPS = 60
 AUDIO_RATE = 48_000
 AUDIO_FRAMES_PER_TICK = AUDIO_RATE // FPS
 AUDIO_BYTES_PER_TICK = AUDIO_FRAMES_PER_TICK * 2 * 2
+AUDIO_RING_FRAMES = 4
+AUDIO_RING_BYTES = AUDIO_RING_FRAMES * AUDIO_BYTES_PER_TICK
 assert AUDIO_RATE % FPS == 0
 FRAMEBUFFER_BYTES = WIDTH * HEIGHT * 2
 
@@ -22,6 +24,12 @@ framebuffer: list[memoryview] = [
     display_view[FRAMEBUFFER_BYTES:].cast("H"),
 ]
 buffer_index = 0
+
+audio_ring = bytearray(AUDIO_RING_BYTES)
+audio_ring_view = memoryview(audio_ring)
+audio_ring_read = 0
+audio_ring_write = 0
+audio_ring_used = 0
 
 # replace the dot with a 16x16 space invader sprite, 2 bytes per pixel, 16x16 pixels
 player_sprite = memoryview(bytearray.fromhex(
@@ -87,13 +95,42 @@ def make_test_pattern(pixels: memoryview, width: int, height: int):
 
 
 # Machine Functions
-# Copy bytes from the incoming audio data to the output buffer, wrapping around if necessary.
-def take_audio(data: bytes, position: int) -> tuple[bytes, int]:
-    end = position + AUDIO_BYTES_PER_TICK
-    assert len(data) >= AUDIO_BYTES_PER_TICK
-    if end <= len(data):
-        return data[position:end], end % len(data)
-    return data[position:] + data[:end - len(data)], end % len(data)
+# Copy bytes from the looping source into the audio ring.
+def fill_audio_ring(source: bytes, source_position: int, count: int) -> int:
+    global audio_ring_write, audio_ring_used
+
+    assert len(source) >= AUDIO_BYTES_PER_TICK
+    assert count <= AUDIO_RING_BYTES - audio_ring_used
+    source_view = memoryview(source)
+    remaining = count
+
+    while remaining:
+        amount = min(
+            remaining,
+            AUDIO_RING_BYTES - audio_ring_write,
+            len(source) - source_position,
+        )
+        audio_ring_view[audio_ring_write:audio_ring_write + amount] = \
+            source_view[source_position:source_position + amount]
+        audio_ring_write = (audio_ring_write + amount) % AUDIO_RING_BYTES
+        source_position = (source_position + amount) % len(source)
+        audio_ring_used += amount
+        remaining -= amount
+
+    return source_position
+
+
+# Return one contiguous frame of audio and advance the ring's read position.
+def read_audio_ring() -> memoryview:
+    global audio_ring_read, audio_ring_used
+
+    assert audio_ring_used >= AUDIO_BYTES_PER_TICK
+    end = audio_ring_read + AUDIO_BYTES_PER_TICK
+    assert end <= AUDIO_RING_BYTES
+    chunk = audio_ring_view[audio_ring_read:end]
+    audio_ring_read = end % AUDIO_RING_BYTES
+    audio_ring_used -= AUDIO_BYTES_PER_TICK
+    return chunk
 
 # Copy the framebuffer from one buffer to another.
 def copy_framebuffer(source: memoryview, target: memoryview):
@@ -166,7 +203,7 @@ def draw_sprite(pixels: memoryview, sprite: memoryview, x: int, y: int):
 
 # Run the simulation loop, calling the output function with each frame of audio and video data.
 def run(audio: bytes, frame_limit: int | None, simulator__output) -> None:
-    global buffer_index
+    global buffer_index, audio_ring_read, audio_ring_write, audio_ring_used
 
     # Simulator Init Code
     # nothing yet
@@ -179,7 +216,10 @@ def run(audio: bytes, frame_limit: int | None, simulator__output) -> None:
     # Build a lookup table for decaying the framebuffer
     LUT = make_decay_LUT()
 
-    audio_position = 0
+    audio_ring_read = 0
+    audio_ring_write = 0
+    audio_ring_used = 0
+    audio_position = fill_audio_ring(audio, 0, AUDIO_RING_BYTES)
     frame = -1
 
     # Draw frames...
@@ -195,7 +235,7 @@ def run(audio: bytes, frame_limit: int | None, simulator__output) -> None:
         # **************************************
         
         # AUDIO PIPE     
-        audio_chunk, audio_position = take_audio(audio, audio_position)
+        audio_chunk = read_audio_ring()
         # VIDEO PIPE
         # do nothing yet
         copy_framebuffer(framebuffer[1 - buffer_index], framebuffer[buffer_index])
@@ -213,3 +253,6 @@ def run(audio: bytes, frame_limit: int | None, simulator__output) -> None:
         simulator__make_hdmi_frame(framebuffer[buffer_index])
         # Pump the output pipes
         simulator__output(hdmi_framebuffer, audio_chunk)
+        audio_position = fill_audio_ring(
+            audio, audio_position, AUDIO_BYTES_PER_TICK
+        )
