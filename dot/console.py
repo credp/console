@@ -79,8 +79,25 @@ def copy_framebuffer(source: memoryview, target: memoryview):
     target[:] = source
     return
 
+def make_decay_LUT() -> list[int]:
+    lut = [0] * 65536
+
+    for pixel in range(65536):
+        red = (pixel >> 10) & 31
+        green = (pixel >> 5) & 31
+        blue = pixel & 31
+        red = max(red - 1, 0)
+        green = max(green - 1, 0)
+        blue = max(blue - 1, 0)
+        lut[pixel] = (red << 10) | (green << 5) | blue
+    return lut
+
 # Fade out the framebuffer by reducing each color channel by 1, clamping at 0.
-def decay_framebuffer(pixels: memoryview):
+def decay_framebuffer(pixels: memoryview, lut: list[int] | None = None):
+    if lut is not None:
+        for i in range(len(pixels)):
+            pixels[i] = lut[pixels[i]]
+        return
     for i in range(len(pixels)):
         pixel = pixels[i]
         red = (pixel >> 10) & 31
@@ -111,9 +128,16 @@ def draw_dot(pixels: memoryview, frame: int):
 def run(audio: bytes, frame_limit: int | None, simulator__output) -> None:
     global buffer_index
 
+    # Simulator Init Code
+    # nothing yet
+
+    # Machine Init Code
+
     # Initialize the framebuffer with a test pattern
     make_test_pattern(framebuffer[0], WIDTH, HEIGHT)
     make_test_pattern(framebuffer[1], WIDTH, HEIGHT)
+    # Build a lookup table for decaying the framebuffer
+    LUT = make_decay_LUT()
 
     audio_position = 0
     frame = -1
@@ -136,7 +160,7 @@ def run(audio: bytes, frame_limit: int | None, simulator__output) -> None:
         # do nothing yet
         copy_framebuffer(framebuffer[1 - buffer_index], framebuffer[buffer_index])
         if frame % 4 == 0:
-            decay_framebuffer(framebuffer[buffer_index])
+            decay_framebuffer(framebuffer[buffer_index], LUT)
         draw_dot(framebuffer[buffer_index], frame)
 
         # **************************************
