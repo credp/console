@@ -21,7 +21,8 @@ this order:
 2. dynamic
 3. foreground
 
-Bit 15 marks a transparent pixel. The ARM side owns the background and
+Pixels use RGB1555: bit 15 is alpha (`1` = opaque, `0` = transparent), followed
+by five bits each of red, green, and blue. The ARM side owns the background and
 foreground planes. FPGA logic generates the dynamic plane.
 
 Do not construct or store a complete 1920x1080 framebuffer. Generate HDMI
