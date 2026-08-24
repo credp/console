@@ -17,12 +17,14 @@ AUDIO_RING_BYTES = AUDIO_RING_FRAMES * AUDIO_BYTES_PER_TICK
 assert AUDIO_RATE % FPS == 0
 FRAMEBUFFER_BYTES = WIDTH * HEIGHT * 2
 
-display = bytearray(FRAMEBUFFER_BYTES * 2)
+display = bytearray(FRAMEBUFFER_BYTES * 4)
 display_view = memoryview(display)
-framebuffer: list[memoryview] = [
-    display_view[:FRAMEBUFFER_BYTES].cast("H"),
-    display_view[FRAMEBUFFER_BYTES:].cast("H"),
+background_buffer = display_view[:FRAMEBUFFER_BYTES].cast("H")
+dynamic_buffer: list[memoryview] = [
+    display_view[FRAMEBUFFER_BYTES:FRAMEBUFFER_BYTES * 2].cast("H"),
+    display_view[FRAMEBUFFER_BYTES * 2:FRAMEBUFFER_BYTES * 3].cast("H"),
 ]
+foreground_buffer = display_view[FRAMEBUFFER_BYTES * 3:].cast("H")
 buffer_index = 0
 
 audio_ring = bytearray(AUDIO_RING_BYTES)
@@ -57,24 +59,40 @@ OUTPUT_WIDTH, OUTPUT_HEIGHT = 1920, 1080
 hdmi_framebuffer = bytearray(OUTPUT_WIDTH * OUTPUT_HEIGHT * 2)
 
 # Simulator Functions
-def simulator__make_hdmi_frame(source: memoryview):
+def simulator__make_hdmi_frame(
+    background: memoryview,
+    dynamic: memoryview,
+    foreground: memoryview,
+):
     """Scale 640x480 to 1440x1080 inside a 1920x1080 frame."""
     target = memoryview(hdmi_framebuffer).cast("H")
     left = (OUTPUT_WIDTH - 1440) // 2
+    composited_row = memoryview(bytearray(WIDTH * 2)).cast("H")
     scaled_row = memoryview(bytearray(1440 * 2)).cast("H")
 
     for source_y in range(HEIGHT):
-        source_row = source[source_y * WIDTH:(source_y + 1) * WIDTH]
+        start = source_y * WIDTH
+        end = start + WIDTH
+        background_row = background[start:end]
+        dynamic_row = dynamic[start:end]
+        foreground_row = foreground[start:end]
 
-        scaled_row[0::9] = source_row[0::4]
-        scaled_row[1::9] = source_row[0::4]
-        scaled_row[2::9] = source_row[0::4]
-        scaled_row[3::9] = source_row[1::4]
-        scaled_row[4::9] = source_row[1::4]
-        scaled_row[5::9] = source_row[2::4]
-        scaled_row[6::9] = source_row[2::4]
-        scaled_row[7::9] = source_row[3::4]
-        scaled_row[8::9] = source_row[3::4]
+        composited_row[:] = background_row
+        for x in range(WIDTH):
+            if dynamic_row[x] & 0x8000 == 0:
+                composited_row[x] = dynamic_row[x]
+            if foreground_row[x] & 0x8000 == 0:
+                composited_row[x] = foreground_row[x]
+
+        scaled_row[0::9] = composited_row[0::4]
+        scaled_row[1::9] = composited_row[0::4]
+        scaled_row[2::9] = composited_row[0::4]
+        scaled_row[3::9] = composited_row[1::4]
+        scaled_row[4::9] = composited_row[1::4]
+        scaled_row[5::9] = composited_row[2::4]
+        scaled_row[6::9] = composited_row[2::4]
+        scaled_row[7::9] = composited_row[3::4]
+        scaled_row[8::9] = composited_row[3::4]
 
         first_y = (source_y * OUTPUT_HEIGHT + HEIGHT - 1) // HEIGHT
         last_y = ((source_y + 1) * OUTPUT_HEIGHT + HEIGHT - 1) // HEIGHT
@@ -91,6 +109,11 @@ def make_test_pattern(pixels: memoryview, width: int, height: int):
         for x in range(width):
             red = x * 31 // (width - 1)
             pixels[y * width + x] = (red << 10) | (green << 5) | 8
+    return
+
+
+def clear_transparent(pixels: memoryview):
+    pixels.cast("B")[:] = b"\x00\x80" * len(pixels)
     return
 
 
@@ -141,13 +164,17 @@ def make_decay_LUT() -> list[int]:
     lut = [0] * 65536
 
     for pixel in range(65536):
+        if pixel & 0x8000:
+            lut[pixel] = pixel
+            continue
         red = (pixel >> 10) & 31
         green = (pixel >> 5) & 31
         blue = pixel & 31
         red = max(red - 1, 0)
         green = max(green - 1, 0)
         blue = max(blue - 1, 0)
-        lut[pixel] = (red << 10) | (green << 5) | blue
+        faded = (red << 10) | (green << 5) | blue
+        lut[pixel] = faded if faded else 0x8000
     return lut
 
 # Fade out the framebuffer by reducing each color channel by 1, clamping at 0.
@@ -158,13 +185,16 @@ def decay_framebuffer(pixels: memoryview, lut: list[int] | None = None):
         return
     for i in range(len(pixels)):
         pixel = pixels[i]
+        if pixel & 0x8000:
+            continue
         red = (pixel >> 10) & 31
         green = (pixel >> 5) & 31
         blue = pixel & 31
         red = max(red - 1, 0)
         green = max(green - 1, 0)
         blue = max(blue - 1, 0)
-        pixels[i] = (red << 10) | (green << 5) | blue
+        faded = (red << 10) | (green << 5) | blue
+        pixels[i] = faded if faded else 0x8000
     return
 
 def position_from_frame(frame: int) -> tuple[int, int]:
@@ -210,9 +240,11 @@ def run(audio: bytes, frame_limit: int | None, simulator__output) -> None:
 
     # Machine Init Code
 
-    # Initialize the framebuffer with a test pattern
-    make_test_pattern(framebuffer[0], WIDTH, HEIGHT)
-    make_test_pattern(framebuffer[1], WIDTH, HEIGHT)
+    # Initialize the three video planes.
+    make_test_pattern(background_buffer, WIDTH, HEIGHT)
+    clear_transparent(dynamic_buffer[0])
+    clear_transparent(dynamic_buffer[1])
+    clear_transparent(foreground_buffer)
     # Build a lookup table for decaying the framebuffer
     LUT = make_decay_LUT()
 
@@ -238,19 +270,25 @@ def run(audio: bytes, frame_limit: int | None, simulator__output) -> None:
         audio_chunk = read_audio_ring()
         # VIDEO PIPE
         # do nothing yet
-        copy_framebuffer(framebuffer[1 - buffer_index], framebuffer[buffer_index])
+        copy_framebuffer(
+            dynamic_buffer[1 - buffer_index], dynamic_buffer[buffer_index]
+        )
         if frame % 4 == 0:
-            decay_framebuffer(framebuffer[buffer_index], LUT)
+            decay_framebuffer(dynamic_buffer[buffer_index], LUT)
         # Get a position in screen space based upon the frame number
         x,y = position_from_frame(frame)
-        #draw_dot(framebuffer[buffer_index], x, y)
-        draw_sprite(framebuffer[buffer_index], player_sprite, x, y)
+        #draw_dot(dynamic_buffer[buffer_index], x, y)
+        draw_sprite(dynamic_buffer[buffer_index], player_sprite, x, y)
 
         # **************************************
         # NOW WE ARE IN SIMULATOR SPACE
         # **************************************
         # Prepare the HDMI frame from the framebuffer
-        simulator__make_hdmi_frame(framebuffer[buffer_index])
+        simulator__make_hdmi_frame(
+            background_buffer,
+            dynamic_buffer[buffer_index],
+            foreground_buffer,
+        )
         # Pump the output pipes
         simulator__output(hdmi_framebuffer, audio_chunk)
         audio_position = fill_audio_ring(
