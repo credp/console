@@ -17,6 +17,10 @@ AUDIO_RING_BYTES = AUDIO_RING_FRAMES * AUDIO_BYTES_PER_TICK
 assert AUDIO_RATE % FPS == 0
 FRAMEBUFFER_BYTES = WIDTH * HEIGHT * 2
 
+# Native RGB1555: bit 15 is alpha (1 = opaque, 0 = transparent).
+ALPHA_OPAQUE = 0x8000
+TRANSPARENT_PIXEL = 0x0000
+
 display = bytearray(FRAMEBUFFER_BYTES * 4)
 display_view = memoryview(display)
 background_buffer = display_view[:FRAMEBUFFER_BYTES].cast("H")
@@ -35,22 +39,22 @@ audio_ring_used = 0
 
 # replace the dot with a 16x16 space invader sprite, 2 bytes per pixel, 16x16 pixels
 player_sprite = memoryview(bytearray.fromhex(
-    "0080008000800080000000800080008000800080008000000080008000800080"
-    "0080008000800000ff7f000000800080008000800000ff7f0000008000800080"
-    "00800080008000800000ff7f0000000000000000ff7f00000080008000800080"
-    "0080008000800000ff7fff7fff7fff7fff7fff7fff7fff7f0000008000800080"
-    "008000800000ff7fff7f0000ff7fff7fff7fff7f0000ff7fff7f000000800080"
-    "00800000ff7fff7fff7fff7fff7fff7fff7fff7fff7fff7fff7fff7f00000080"
-    "0000ff7fff7f0000ff7fff7fff7fff7fff7fff7fff7fff7f0000ff7fff7f0000"
-    "ff7fff7fff7fff7fff7fff7fff7fff7fff7fff7fff7fff7fff7fff7fff7fff7f"
-    "ff7f0000ff7fff7fff7fff7fff7fff7fff7fff7fff7fff7fff7fff7f0000ff7f"
-    "ff7f0000ff7f00000000ff7fff7fff7fff7fff7fff7f00000000ff7f0000ff7f"
-    "ff7f0000ff7f0000008000000000008000800000000000800000ff7f0000ff7f"
-    "00800080008000800000ff7fff7f00000000ff7fff7f00000080000000800080"
-    "0080008000800000ff7fff7f0000008000800000ff7fff7f0000008000800080"
-    "008000800000ff7fff7f000000800080008000800000ff7fff7f000000800080"
-    "00800000ff7fff7f00000080008000800080008000800000ff7fff7f00000080"
-    "0080008000000000008000800080008000800080008000800000000000800080"
+    "0000000000000000008000000000000000000000000000800000000000000000"
+    "0000000000000080ffff008000000000000000000080ffff0080000000000000"
+    "00000000000000000080ffff0080008000800080ffff00800000000000000000"
+    "0000000000000080ffffffffffffffffffffffffffffffff0080000000000000"
+    "000000000080ffffffff0080ffffffffffffffff0080ffffffff008000000000"
+    "00000080ffffffffffffffffffffffffffffffffffffffffffffffff00800000"
+    "0080ffffffff0080ffffffffffffffffffffffffffffffff0080ffffffff0080"
+    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    "ffff0080ffffffffffffffffffffffffffffffffffffffffffffffff0080ffff"
+    "ffff0080ffff00800080ffffffffffffffffffffffff00800080ffff0080ffff"
+    "ffff0080ffff0080000000800080000000000080008000000080ffff0080ffff"
+    "00000000000000000080ffffffff00800080ffffffff00800000008000000000"
+    "0000000000000080ffffffff0080000000000080ffffffff0080000000000000"
+    "000000000080ffffffff008000000000000000000080ffffffff008000000000"
+    "00000080ffffffff00800000000000000000000000000080ffffffff00800000"
+    "0000000000800080000000000000000000000000000000000080008000000000"
 )).cast("H")
 
 
@@ -79,9 +83,9 @@ def simulator__make_hdmi_frame(
 
         composited_row[:] = background_row
         for x in range(WIDTH):
-            if dynamic_row[x] & 0x8000 == 0:
+            if dynamic_row[x] & ALPHA_OPAQUE:
                 composited_row[x] = dynamic_row[x]
-            if foreground_row[x] & 0x8000 == 0:
+            if foreground_row[x] & ALPHA_OPAQUE:
                 composited_row[x] = foreground_row[x]
 
         scaled_row[0::9] = composited_row[0::4]
@@ -108,12 +112,13 @@ def make_test_pattern(pixels: memoryview, width: int, height: int):
         green = y * 31 // (height - 1)
         for x in range(width):
             red = x * 31 // (width - 1)
-            pixels[y * width + x] = (red << 10) | (green << 5) | 8
+            pixels[y * width + x] = \
+                ALPHA_OPAQUE | (red << 10) | (green << 5) | 8
     return
 
 
 def clear_transparent(pixels: memoryview):
-    pixels.cast("B")[:] = b"\x00\x80" * len(pixels)
+    pixels.cast("B")[:] = b"\x00\x00" * len(pixels)
     return
 
 
@@ -164,7 +169,7 @@ def make_decay_LUT() -> list[int]:
     lut = [0] * 65536
 
     for pixel in range(65536):
-        if pixel & 0x8000:
+        if not pixel & ALPHA_OPAQUE:
             lut[pixel] = pixel
             continue
         red = (pixel >> 10) & 31
@@ -174,7 +179,7 @@ def make_decay_LUT() -> list[int]:
         green = max(green - 1, 0)
         blue = max(blue - 1, 0)
         faded = (red << 10) | (green << 5) | blue
-        lut[pixel] = faded if faded else 0x8000
+        lut[pixel] = ALPHA_OPAQUE | faded if faded else TRANSPARENT_PIXEL
     return lut
 
 # Fade out the framebuffer by reducing each color channel by 1, clamping at 0.
@@ -185,7 +190,7 @@ def decay_framebuffer(pixels: memoryview, lut: list[int] | None = None):
         return
     for i in range(len(pixels)):
         pixel = pixels[i]
-        if pixel & 0x8000:
+        if not pixel & ALPHA_OPAQUE:
             continue
         red = (pixel >> 10) & 31
         green = (pixel >> 5) & 31
@@ -194,7 +199,7 @@ def decay_framebuffer(pixels: memoryview, lut: list[int] | None = None):
         green = max(green - 1, 0)
         blue = max(blue - 1, 0)
         faded = (red << 10) | (green << 5) | blue
-        pixels[i] = faded if faded else 0x8000
+        pixels[i] = ALPHA_OPAQUE | faded if faded else TRANSPARENT_PIXEL
     return
 
 def position_from_frame(frame: int) -> tuple[int, int]:
@@ -209,21 +214,21 @@ def draw_dot(pixels: memoryview, x: int, y: int):
     right = min(x + 8, WIDTH)
     top = max(y - 8, 0)
     bottom = min(y + 8, HEIGHT)
-    white = memoryview(bytearray([0xFF, 0x7F]) * (right - left)).cast("H")
+    white = memoryview(bytearray([0xFF, 0xFF]) * (right - left)).cast("H")
     for row in range(top, bottom):
         start = row * WIDTH + left
         pixels[start:start + right - left] = white
     return
 
-# Draw a sprite on the framebuffer at a specified position, skipping pixels with the alpha bit set.
-# Position is the top-left corner of the sprite. The sprite is 16x16 pixels, 2 bytes per pixel, with the alpha bit in the high bit of each pixel.
+# Draw a sprite on the framebuffer at a specified position, skipping pixels
+# whose alpha bit is clear. Position is the top-left corner of the sprite.
 def draw_sprite(pixels: memoryview, sprite: memoryview, x: int, y: int):
     sprite_width = 16
     sprite_height = 16
     for row in range(sprite_height):
         for col in range(sprite_width):
             pixel_value = sprite[row * sprite_width + col]
-            if pixel_value & 0x8000 != 0:  # Alpha bit is set, skip this pixel
+            if not pixel_value & ALPHA_OPAQUE:
                 continue
             target_x = x + col
             target_y = y + row
