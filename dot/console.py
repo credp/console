@@ -21,6 +21,9 @@ FRAMEBUFFER_BYTES = WIDTH * HEIGHT * 2
 ALPHA_OPAQUE = 0x8000
 TRANSPARENT_PIXEL = 0x0000
 
+def transparent_pixel(pixel: int) -> int:
+    return pixel & ALPHA_OPAQUE
+
 display = bytearray(FRAMEBUFFER_BYTES * 4)
 display_view = memoryview(display)
 background_buffer = display_view[:FRAMEBUFFER_BYTES].cast("H")
@@ -38,7 +41,7 @@ audio_ring_write = 0
 audio_ring_used = 0
 
 # replace the dot with a 16x16 space invader sprite, 2 bytes per pixel, 16x16 pixels
-player_sprite = memoryview(bytearray.fromhex(
+player_sprite = [ memoryview(bytearray.fromhex(
     "0000000000000000008000000000000000000000000000800000000000000000"
     "0000000000000080ffff008000000000000000000080ffff0080000000000000"
     "00000000000000000080ffff0080008000800080ffff00800000000000000000"
@@ -55,7 +58,26 @@ player_sprite = memoryview(bytearray.fromhex(
     "000000000080ffffffff008000000000000000000080ffffffff008000000000"
     "00000080ffffffff00800000000000000000000000000080ffffffff00800000"
     "0000000000800080000000000000000000000000000000000080008000000000"
+)).cast("H"),
+memoryview(bytearray.fromhex(
+    "0000000000000000008000000000000000000000000000800000000000000000"
+    "00000000000000000080ffff0080000000000080ffff00800000000000000000"
+    "00000000000000000080ffff0080008000800080ffff00800000000000000000"
+    "0000000000000080ffffffffffffffffffffffffffffffff0080000000000000"
+    "000000000080ffffffff0080ffffffffffffffff0080ffffffff008000000000"
+    "00000080ffffffffffffffffffffffffffffffffffffffffffffffff00800000"
+    "0080ffffffff0080ffffffffffffffffffffffffffffffff0080ffffffff0080"
+    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    "ffff0080ffffffffffffffffffffffffffffffffffffffffffffffff0080ffff"
+    "ffff0080ffff00800080ffffffffffffffffffffffff00800080ffff0080ffff"
+    "ffff0080ffff0080000000800080000000000080008000000080ffff0080ffff"
+    "00000000000000000080ffffffff00800080ffffffff00800000008000000000"
+    "00000000000000000080ffffffff00800080ffffffff00800000000000000000"
+    "00000000000000000080ffffffff00800080ffffffff00800000000000000000"
+    "00000000000000000080ffffffff00800080ffffffff00800000000000000000"
+    "0000000000000000000000800080000000000080008000000000000000000000"
 )).cast("H")
+]
 
 
 # Simulator Defs
@@ -83,9 +105,9 @@ def simulator__make_hdmi_frame(
 
         composited_row[:] = background_row
         for x in range(WIDTH):
-            if dynamic_row[x] & ALPHA_OPAQUE:
+            if transparent_pixel(dynamic_row[x]):
                 composited_row[x] = dynamic_row[x]
-            if foreground_row[x] & ALPHA_OPAQUE:
+            if transparent_pixel(foreground_row[x]):
                 composited_row[x] = foreground_row[x]
 
         scaled_row[0::9] = composited_row[0::4]
@@ -169,7 +191,7 @@ def make_decay_LUT() -> list[int]:
     lut = [0] * 65536
 
     for pixel in range(65536):
-        if not pixel & ALPHA_OPAQUE:
+        if not transparent_pixel(pixel):
             lut[pixel] = pixel
             continue
         red = (pixel >> 10) & 31
@@ -190,7 +212,7 @@ def decay_framebuffer(pixels: memoryview, lut: list[int] | None = None):
         return
     for i in range(len(pixels)):
         pixel = pixels[i]
-        if not pixel & ALPHA_OPAQUE:
+        if not transparent_pixel(pixel):
             continue
         red = (pixel >> 10) & 31
         green = (pixel >> 5) & 31
@@ -258,6 +280,7 @@ def run(audio: bytes, frame_limit: int | None, simulator__output) -> None:
     audio_ring_used = 0
     audio_position = fill_audio_ring(audio, 0, AUDIO_RING_BYTES)
     frame = -1
+    sprite_index = 0
 
     # Draw frames...
 
@@ -283,7 +306,10 @@ def run(audio: bytes, frame_limit: int | None, simulator__output) -> None:
         # Get a position in screen space based upon the frame number
         x,y = position_from_frame(frame)
         #draw_dot(dynamic_buffer[buffer_index], x, y)
-        draw_sprite(dynamic_buffer[buffer_index], player_sprite, x, y)
+        draw_sprite(dynamic_buffer[buffer_index], player_sprite[sprite_index], x, y)
+
+        if frame % 60 == 0:
+            sprite_index = (sprite_index + 1) % len(player_sprite)
 
         # **************************************
         # NOW WE ARE IN SIMULATOR SPACE
