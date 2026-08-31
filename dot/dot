@@ -33,7 +33,8 @@ def start_ffmpeg(output: Path, monitor: bool):
         "-ac", "2", "-i", f"pipe:{audio_read}",
         "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "veryfast",
         "-tune", "zerolatency", "-pix_fmt", "yuv420p", "-g", str(console.FPS),
-        "-c:a", "s302m", "-strict", "experimental", "-f", muxer, destination,
+        "-c:a", "s302m", 
+        "-strict", "experimental", "-f", muxer, destination,
     ]
     try:
         process = subprocess.Popen(command, pass_fds=(video_read, audio_read))
