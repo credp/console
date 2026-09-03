@@ -1,0 +1,6 @@
+set_global_assignment -name VERILOG_FILE rtl/lfsr.v
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/cos.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/bram_raster.v
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/raster_720p.sv
+set_global_assignment -name SDC_FILE Template.sdc
+set_global_assignment -name SYSTEMVERILOG_FILE Template.sv
