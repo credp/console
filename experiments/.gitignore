@@ -1,0 +1,38 @@
+# Quartus-generated build directories
+**/db/
+**/greybox_tmp/
+**/incremental_db/
+**/output_files/
+**/simulation/
+**/hc_output/
+**/hps_isw_handoff/
+**/.qsys_edit/
+**/*_netlist/
+
+# Quartus reports, databases, programming outputs, and workspace state
+**/*.rpt
+**/*.smsg
+**/*.summary
+**/*.done
+**/*.jdi
+**/*.pin
+**/*.sof
+**/*.sld
+**/*.qws
+**/*.qdf
+**/*.ppf
+**/*.ddb
+**/*.cdf
+**/c5_pin_model_dump.txt
+**/PLLJ_PLLSPE_INFO.txt
+
+# Local simulation products
+**/*.vcd
+**/*_sim
+
+# Editor and patch leftovers
+**/*.bak
+**/*.orig
+**/*.rej
+**/*~
+**/.DS_Store

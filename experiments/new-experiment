@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly DEFAULT_TEMPLATE_DIR="${SCRIPT_DIR}/../../vendor/Template_MiSTer"
+
+usage() {
+    cat <<'EOF'
+Usage: ./new-experiment NUMBER-NAME
+
+Create a new experiment from the tracked files in the local MiSTer template.
+The name must look like "003-example-name". The template checkout defaults to
+../../vendor/Template_MiSTer and can be overridden with MISTER_TEMPLATE_DIR.
+EOF
+}
+
+if [[ $# -ne 1 || "$1" == "-h" || "$1" == "--help" ]]; then
+    usage
+    [[ $# -eq 1 ]] && exit 0
+    exit 2
+fi
+
+readonly EXPERIMENT_NAME="$1"
+readonly TEMPLATE_DIR="${MISTER_TEMPLATE_DIR:-$DEFAULT_TEMPLATE_DIR}"
+readonly DESTINATION="${SCRIPT_DIR}/${EXPERIMENT_NAME}"
+
+if [[ ! "$EXPERIMENT_NAME" =~ ^[0-9]{3}-[a-z0-9][a-z0-9-]*$ ]]; then
+    printf 'Invalid experiment name: %s\n' "$EXPERIMENT_NAME" >&2
+    printf 'Expected a name such as: 003-example-name\n' >&2
+    exit 2
+fi
+
+if [[ -e "$DESTINATION" ]]; then
+    printf 'Destination already exists: %s\n' "$DESTINATION" >&2
+    exit 1
+fi
+
+if ! git -C "$TEMPLATE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf 'MiSTer template checkout not found at: %s\n' "$TEMPLATE_DIR" >&2
+    printf 'Set MISTER_TEMPLATE_DIR to another checkout if needed.\n' >&2
+    exit 1
+fi
+
+work_dir="$(mktemp -d "${TMPDIR:-/tmp}/new-mister-experiment.XXXXXX")"
+trap 'rm -rf -- "$work_dir"' EXIT
+
+git -C "$TEMPLATE_DIR" archive --format=tar HEAD | tar -xf - -C "$work_dir"
+mv -- "$work_dir" "$DESTINATION"
+trap - EXIT
+
+printf 'Created %s\n' "$DESTINATION"
+printf 'Template revision: %s\n' "$(git -C "$TEMPLATE_DIR" rev-parse --short HEAD)"
+
