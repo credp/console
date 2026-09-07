@@ -1,0 +1,9 @@
+html, body { height: 100%; }
+body { margin: 0; display: grid; grid-template-rows: 1fr auto; background: #111; color: var(--vscode-foreground); }
+main { min-height: 0; display: grid; place-items: center; overflow: hidden; position: relative; }
+canvas { max-width: 100%; max-height: 100%; width: auto; height: auto; image-rendering: pixelated; background: #000; }
+#empty { position: absolute; color: var(--vscode-descriptionForeground); }
+footer { display: flex; gap: 1rem; align-items: center; min-height: 2rem; padding: 0.35rem 0.6rem; background: var(--vscode-statusBar-background); color: var(--vscode-statusBar-foreground); }
+#status { flex: 1; }
+button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; padding: 0.3rem 0.7rem; }
+button:hover { background: var(--vscode-button-hoverBackground); }

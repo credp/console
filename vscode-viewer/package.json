@@ -1,0 +1,63 @@
+{
+  "name": "dot-console-viewer",
+  "displayName": "DOT Console Viewer",
+  "description": "Live video and audio monitor for the DOT console simulator.",
+  "version": "0.0.1",
+  "publisher": "dot-console",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:dotViewer.open"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "dotViewer.open",
+        "title": "DOT Console: Open Viewer"
+      },
+      {
+        "command": "dotViewer.restartListener",
+        "title": "DOT Console: Restart Viewer Listener"
+      }
+    ],
+    "configuration": {
+      "title": "DOT Console Viewer",
+      "properties": {
+        "dotViewer.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Interface on which the debug-stream listener accepts connections."
+        },
+        "dotViewer.port": {
+          "type": "number",
+          "default": 4600,
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "TCP port on which the viewer accepts the DOT output stream."
+        },
+        "dotViewer.openOnConnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open the viewer automatically when a simulator connects."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "check": "tsc -p ./ --noEmit",
+    "demo": "node scripts/send-demo.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.5.0"
+  }
+}
