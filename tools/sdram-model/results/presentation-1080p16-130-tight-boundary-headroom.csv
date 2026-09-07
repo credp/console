@@ -1,0 +1,5 @@
+frequency_mhz,qualification,mapping,format,mode,background_direction,max_tested_safe_background_mb_s,first_tested_unsafe_background_mb_s
+130.0,board-acceptance,stripe-1k-bank-chip,1080p16,capture,read,8.0,10.0
+130.0,board-acceptance,stripe-1k-bank-chip,1080p16,capture,write,8.0,10.0
+130.0,board-acceptance,stripe-1k-bank-chip,1080p16,replay,read,8.0,10.0
+130.0,board-acceptance,stripe-1k-bank-chip,1080p16,replay,write,8.0,10.0

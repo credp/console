@@ -1,0 +1,2 @@
+frequency_mhz,mapping,format,active_fraction,video_fifo_words,low_watermark_words,high_watermark_words,deadline_guard_cycles,background_offered_mb_s,all_modes_directions_safe,minimum_video_slack_us,maximum_video_wait_us,minimum_background_service_pct,maximum_dq_turnarounds
+120.0,stripe-1k-bank-chip,720p16,0.8378181818181818,2048,512,1536,4096,101.0,0,-96.16666666666667,2722.4583333333335,99.94843560272128,6726

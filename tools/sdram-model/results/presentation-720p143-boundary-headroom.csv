@@ -1,0 +1,5 @@
+frequency_mhz,qualification,mapping,format,mode,background_direction,max_tested_safe_background_mb_s,first_tested_unsafe_background_mb_s
+143.0,exploratory-overclock,stripe-1k-bank-chip,720p16,capture,read,165.0,175.0
+143.0,exploratory-overclock,stripe-1k-bank-chip,720p16,capture,write,175.0,180.0
+143.0,exploratory-overclock,stripe-1k-bank-chip,720p16,replay,read,175.0,180.0
+143.0,exploratory-overclock,stripe-1k-bank-chip,720p16,replay,write,165.0,175.0

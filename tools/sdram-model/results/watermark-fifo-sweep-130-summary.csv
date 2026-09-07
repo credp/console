@@ -1,0 +1,4 @@
+frequency_mhz,mapping,format,video_fifo_words,low_watermark_words,high_watermark_words,deadline_guard_cycles,background_offered_mb_s,all_modes_directions_safe,minimum_video_slack_us,maximum_video_wait_us,minimum_background_service_pct,maximum_dq_turnarounds
+130,stripe-1k-bank-chip,720p16,2048,512,1536,4096,140.0,0,0.46923076923076923,67.25384615384615,99.88805707888976,10082
+130,stripe-1k-bank-chip,720p16,4096,512,1536,4096,140.0,0,0.46923076923076923,104.29230769230769,99.90108565776323,10082
+130,stripe-1k-bank-chip,720p16,8192,512,1536,4096,140.0,0,0.46923076923076923,178.36923076923077,99.89422851098772,10082

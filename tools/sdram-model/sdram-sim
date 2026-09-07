@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+from sdram_model.cli import main
+main()
