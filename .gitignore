@@ -1,4 +1,5 @@
 *de10-nano-env.sh
-*E10-Nano_v.1.1.0_HWrevE_SystemCD*
-*__pycache__/
+experiments/environment/DE10-Nano_v.1.1.0_HWrevE_SystemCD/
 dot/dot.ts
+__pycache__/
+*.py[cod]
