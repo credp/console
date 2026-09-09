@@ -49,6 +49,15 @@ git -C "$TEMPLATE_DIR" archive --format=tar HEAD | tar -xf - -C "$work_dir"
 mv -- "$work_dir" "$DESTINATION"
 trap - EXIT
 
+# Keep the experiment-specific entry point tiny; build policy lives in the
+# repository harness and is updated once for every experiment.
+if [[ -f "${DESTINATION}/build.sh" || ! -e "${DESTINATION}/build.sh" ]]; then
+    printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail' \
+        'readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"' \
+        'EXPERIMENT_DIR="$SCRIPT_DIR" exec "${SCRIPT_DIR}/../harness/build-quartus-experiment" "$@"' \
+        >"${DESTINATION}/build.sh"
+    chmod +x "${DESTINATION}/build.sh"
+fi
+
 printf 'Created %s\n' "$DESTINATION"
 printf 'Template revision: %s\n' "$(git -C "$TEMPLATE_DIR" rev-parse --short HEAD)"
-

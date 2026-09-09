@@ -11,6 +11,12 @@ The script exports only files tracked at the template's current `HEAD`, so the
 new directory contains neither `.git` metadata nor local template build output.
 It refuses to overwrite an existing experiment.
 
+Each generated experiment gets a small `build.sh` wrapper around
+`harness/build-quartus-experiment`. Quartus/Verilator policy therefore lives in
+one place while project sources, pin constraints, and the QIP manifest remain
+local and reviewable. Environment variables such as `PROJECT_FILE`,
+`QUARTUS_ROOTDIR`, `LINT_TOP`, and `LINT_ENTRY` can override harness defaults.
+
 The default template checkout is:
 
 ```text
