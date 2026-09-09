@@ -1,0 +1,11 @@
+[options]
+mode bmc
+depth 72
+[engines]
+smtbmc boolector
+[script]
+read -formal -sv sdram_init_refresh.sv refresh_formal.sv
+prep -top refresh_formal
+[files]
+rtl/sdram_init_refresh.sv
+formal/refresh_formal.sv

@@ -1,0 +1,15 @@
+[options]
+mode prove
+depth 12
+
+[engines]
+smtbmc boolector
+
+[script]
+read -formal -sv sdram_addr_decode.sv sdram_request_splitter.sv splitter_formal.sv
+prep -top splitter_formal
+
+[files]
+rtl/sdram_request_splitter.sv
+rtl/sdram_addr_decode.sv
+formal/splitter_formal.sv

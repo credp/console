@@ -1,0 +1,11 @@
+[options]
+mode bmc
+depth 12
+[engines]
+smtbmc boolector
+[script]
+read -formal -sv sdram_bram_fifo.sv fifo_formal.sv
+prep -top fifo_formal
+[files]
+rtl/sdram_bram_fifo.sv
+formal/fifo_formal.sv
