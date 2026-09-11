@@ -158,7 +158,8 @@ module sdram_frequency_bist #(
   if(ADDRESS_BITS!=16)$error("006.a address mapping requires ADDRESS_BITS=16");
   if(SDRAM_FREQ_HZ!=20_000_000&&SDRAM_FREQ_HZ!=100_000_000&&
      SDRAM_FREQ_HZ!=120_000_000&&SDRAM_FREQ_HZ!=130_000_000&&
-     SDRAM_FREQ_HZ!=142_000_000&&
+     SDRAM_FREQ_HZ!=142_857_000&&SDRAM_FREQ_HZ!=150_000_000&&
+     SDRAM_FREQ_HZ!=153_000_000&&
      SDRAM_FREQ_HZ!=143_000_000)$error("unsupported 006.a SDRAM frequency");
  end
 endmodule
