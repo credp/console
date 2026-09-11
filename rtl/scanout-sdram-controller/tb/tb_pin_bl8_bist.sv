@@ -29,7 +29,7 @@ module tb_pin_bl8_bist;
 
  initial begin
   fork
-   begin repeat(40000)@(posedge clk);$fatal(1,"timeout");end
+   begin repeat(120000)@(posedge clk);$fatal(1,"timeout");end
    begin
     for(mode=0;mode<4;mode=mode+1)begin
      test_mode=mode;reset=1;repeat(3)@(posedge clk);reset=0;wait(done);

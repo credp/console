@@ -1,6 +1,7 @@
 module sdram_bl8_bist #(
  parameter longint unsigned SDRAM_FREQ_HZ=20_000_000,
- parameter integer POWERUP_US=200
+ parameter integer POWERUP_US=200,
+ parameter integer PERSIST_US=1000
 )(
  input logic clk,reset,input logic[1:0]test_mode,
  output logic[12:0]sdram_a,output logic[1:0]sdram_ba,
@@ -18,6 +19,8 @@ module sdram_bl8_bist #(
   ceil_ns=(ns*SDRAM_FREQ_HZ+64'd999_999_999)/64'd1_000_000_000;
  endfunction
  localparam longint unsigned POWERUP_CYCLES=(SDRAM_FREQ_HZ*POWERUP_US+999_999)/1_000_000;
+ localparam longint unsigned PERSIST_RAW=(SDRAM_FREQ_HZ*PERSIST_US+999_999)/1_000_000;
+ localparam longint unsigned PERSIST_CYCLES=(PERSIST_RAW<1)?1:PERSIST_RAW;
  localparam longint unsigned TRCD=ceil_ns(21),TRP=ceil_ns(21),TWR=ceil_ns(14);
  localparam longint unsigned TRFC=ceil_ns(63),TMRD_RAW=ceil_ns(14),TMRD=(TMRD_RAW<2)?2:TMRD_RAW;
  localparam logic[12:0] MODE_REGISTER=13'b000_0_00_011_0_011; // BL8, sequential, CL3, programmed write burst
@@ -27,13 +30,14 @@ module sdram_bl8_bist #(
   PWR,CKE_WAIT,PRE0,PRE1,WAIT_RP,REF0,WAIT_RF0,REF1,WAIT_RF1,MRS0,MRS1,WAIT_MRD,
   CASE_START,BASE_ACT,BASE_RCD,BASE_CMD,BASE_B1,BASE_B2,BASE_B3,BASE_B4,BASE_B5,BASE_B6,BASE_B7,BASE_REC,
   MASK_ACT,MASK_RCD,MASK_CMD,MASK_B1,MASK_B2,MASK_B3,MASK_B4,MASK_B5,MASK_B6,MASK_B7,MASK_REC,
-  READ_ACT,READ_RCD,READ_CMD,READ_WAIT,READ_SAMPLE,READ_ADVANCE,NEXT_CASE,DONE
+  READ_ACT,READ_RCD,READ_CMD,READ_WAIT,READ_SAMPLE,READ_ADVANCE,NEXT_CASE,PERSIST_WAIT,DONE
  }state_t;
  state_t state;
  longint unsigned timer;
  integer refresh_count;
  logic[4:0]case_index;
  logic[2:0]beat;
+ logic[1:0]pass_phase;
 
  wire target_chip=(case_index>=12);
  wire[3:0]case_within_chip=target_chip?(case_index-12):case_index;
@@ -100,7 +104,7 @@ module sdram_bl8_bist #(
 
  always_ff@(posedge clk)begin
   if(reset)begin
-   state<=PWR;timer<=0;refresh_count<=0;case_index<=0;beat<=0;
+   state<=PWR;timer<=0;refresh_count<=0;case_index<=0;beat<=0;pass_phase<=0;
    tested_words<=0;error_count<=0;first_fail_address<=0;first_fail_expected<=0;
    first_fail_observed<=0;first_fail_state<=0;first_fail_beat<=0;
   end else case(state)
@@ -122,7 +126,14 @@ module sdram_bl8_bist #(
    MRS0:state<=MRS1;
    MRS1:begin state<=WAIT_MRD;timer<=0;end
    WAIT_MRD:if(timer+1>=TMRD)state<=CASE_START;else timer<=timer+1;
-   CASE_START:begin beat<=0;state<=BASE_ACT;end
+   CASE_START:begin
+    beat<=0;
+    case(pass_phase)
+     0:state<=BASE_ACT;
+     1:state<=MASK_ACT;
+     default:state<=READ_ACT;
+    endcase
+   end
    BASE_ACT:begin state<=BASE_RCD;timer<=0;end
    BASE_RCD:if(timer+1>=TRCD)begin beat<=0;state<=BASE_CMD;end else timer<=timer+1;
    BASE_CMD:begin beat<=1;state<=BASE_B1;end
@@ -130,7 +141,7 @@ module sdram_bl8_bist #(
    BASE_B3:begin beat<=4;state<=BASE_B4;end BASE_B4:begin beat<=5;state<=BASE_B5;end
    BASE_B5:begin beat<=6;state<=BASE_B6;end BASE_B6:begin beat<=7;state<=BASE_B7;end
    BASE_B7:begin state<=BASE_REC;timer<=0;end
-   BASE_REC:if(timer+1>=TWR+TRP)begin beat<=0;state<=(test_mode==0)?READ_ACT:MASK_ACT;end else timer<=timer+1;
+   BASE_REC:if(timer+1>=TWR+TRP)begin beat<=0;state<=NEXT_CASE;end else timer<=timer+1;
    MASK_ACT:begin state<=MASK_RCD;timer<=0;end
    MASK_RCD:if(timer+1>=TRCD)begin beat<=0;state<=MASK_CMD;end else timer<=timer+1;
    MASK_CMD:begin beat<=1;state<=MASK_B1;end
@@ -138,7 +149,7 @@ module sdram_bl8_bist #(
    MASK_B3:begin beat<=4;state<=MASK_B4;end MASK_B4:begin beat<=5;state<=MASK_B5;end
    MASK_B5:begin beat<=6;state<=MASK_B6;end MASK_B6:begin beat<=7;state<=MASK_B7;end
    MASK_B7:begin state<=MASK_REC;timer<=0;end
-   MASK_REC:if(timer+1>=TWR+TRP)begin beat<=0;state<=READ_ACT;end else timer<=timer+1;
+   MASK_REC:if(timer+1>=TWR+TRP)begin beat<=0;state<=NEXT_CASE;end else timer<=timer+1;
    READ_ACT:begin state<=READ_RCD;timer<=0;end
    READ_RCD:if(timer+1>=TRCD)begin beat<=0;state<=READ_CMD;end else timer<=timer+1;
    READ_CMD:begin state<=READ_WAIT;timer<=0;end
@@ -159,7 +170,17 @@ module sdram_bl8_bist #(
     if(beat==7)state<=NEXT_CASE;
     else beat<=beat+1'b1;
    end
-   NEXT_CASE:if(case_index==5'd23)state<=DONE;else begin case_index<=case_index+1'b1;state<=CASE_START;end
+   NEXT_CASE:if(case_index!=5'd23)begin case_index<=case_index+1'b1;state<=CASE_START;end
+   else begin
+    case_index<=0;
+    case(pass_phase)
+     0:if(test_mode==0)begin pass_phase<=2;timer<=0;state<=PERSIST_WAIT;end
+       else begin pass_phase<=1;state<=CASE_START;end
+     1:begin pass_phase<=2;timer<=0;state<=PERSIST_WAIT;end
+     default:state<=DONE;
+    endcase
+   end
+   PERSIST_WAIT:if(timer+1>=PERSIST_CYCLES)begin timer<=0;state<=CASE_START;end else timer<=timer+1;
    DONE:state<=DONE;
    default:state<=PWR;
   endcase
