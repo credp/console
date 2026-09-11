@@ -1,6 +1,7 @@
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_addr_decode.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_request_splitter.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_splitter_bist.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_end_to_end_bist.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/presentation_arbiter.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_init_refresh.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/frame_publish.sv
@@ -8,5 +9,6 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_bram_fifo.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/presentation_fifos.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_rw_bist.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_bl8_bist.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_bl8_op_engine.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/capture_flush_guard.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/presentation_mode_control.sv

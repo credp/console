@@ -27,13 +27,15 @@ Changing the option automatically resets and reruns SDRAM initialization. DQM
 is carried in the CAS-cycle `SDRAM_A[12:11]` bits and launched from that same
 packed vector, matching established MiSTer SDRAM controllers.
 
-A synthesized splitter self-test runs in parallel and contributes to the same
-pass LED. It checks the exact address, word count, write flag, and last marker
-for requests crossing an unaligned BL8 boundary (1+8+1 words), a chip stripe,
-a bank stripe, the 1 KiB half-row transition, and a 2 KiB physical-row
-transition (4+8 words in each case). This stage proves the production splitter
-logic itself; driving its emitted operations through the SDRAM engine is the
-next integration step.
+The hardware BIST is now a client rather than part of the memory sequencer. It
+submits five logical requests through `sdram_request_splitter`; every emitted
+operation is accepted by `sdram_bl8_op_engine`, which independently decodes its
+address and performs the physical command and data sequence. The requests cross
+an unaligned BL8 boundary (1+8+1 words), a chip stripe, a bank stripe, the 1 KiB
+half-row transition, and a 2 KiB physical-row transition (4+8 words each).
+Partial writes mask unused physical beats and partial reads discard them. The
+BIST reconstructs and verifies the resulting 58-word logical response stream
+in request order after the separate write and persistence phases.
 
 The same pins are tested by `make test` in
 `../../rtl/scanout-sdram-controller` against a behavioral two-chip model. That

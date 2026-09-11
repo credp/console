@@ -4,10 +4,11 @@ CAD_SUITE ?= /home/chris/Projects/oss-cad-suite
 RTL := $(wildcard rtl/*.sv)
 
 .PHONY: test lint formal clean
-test: build/tb_foundation.vvp build/tb_pin_bist.vvp build/tb_pin_bl8_bist.vvp
+test: build/tb_foundation.vvp build/tb_pin_bist.vvp build/tb_pin_bl8_bist.vvp build/tb_pin_end_to_end.vvp
 	$(VVP) build/tb_foundation.vvp
 	$(VVP) build/tb_pin_bist.vvp
 	$(VVP) build/tb_pin_bl8_bist.vvp
+	$(VVP) build/tb_pin_end_to_end.vvp
 
 build/tb_foundation.vvp: $(RTL) tb/tb_foundation.sv
 	mkdir -p build
@@ -20,6 +21,10 @@ build/tb_pin_bist.vvp: rtl/sdram_rw_bist.sv tb/pin-model/sdram_pair_model.sv tb/
 build/tb_pin_bl8_bist.vvp: rtl/sdram_addr_decode.sv rtl/sdram_bl8_bist.sv tb/pin-model/sdram_pair_model.sv tb/tb_pin_bl8_bist.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_pin_bl8_bist -o $@ $^
+
+build/tb_pin_end_to_end.vvp: rtl/sdram_addr_decode.sv rtl/sdram_request_splitter.sv rtl/sdram_bl8_op_engine.sv rtl/sdram_end_to_end_bist.sv tb/pin-model/sdram_pair_model.sv tb/tb_pin_end_to_end.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_pin_end_to_end -o $@ $^
 
 lint:
 	verilator --lint-only -Wall -Wno-fatal --top-module sdram_request_splitter $(RTL)

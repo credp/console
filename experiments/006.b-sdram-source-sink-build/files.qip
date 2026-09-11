@@ -7,3 +7,5 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/scanout-sdram-controlle
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/scanout-sdram-controller/rtl/sdram_addr_decode.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/scanout-sdram-controller/rtl/sdram_request_splitter.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/scanout-sdram-controller/rtl/sdram_splitter_bist.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/scanout-sdram-controller/rtl/sdram_bl8_op_engine.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/scanout-sdram-controller/rtl/sdram_end_to_end_bist.sv

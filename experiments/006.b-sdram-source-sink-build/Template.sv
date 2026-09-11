@@ -131,21 +131,12 @@ wire [31:0] sdram_error_count;
 wire [26:0] sdram_first_fail_address;
 wire [15:0] sdram_first_fail_expected;
 wire [15:0] sdram_first_fail_observed;
-wire [5:0] sdram_first_fail_state;
-wire [2:0] sdram_first_fail_beat;
-wire splitter_test_done;
-wire splitter_test_pass;
-wire [7:0] splitter_checked_ops;
-wire [3:0] splitter_first_fail_request;
-wire [1:0] splitter_first_fail_op;
-
-sdram_splitter_bist splitter_test
-(
-	.clk(clk_sys), .reset(reset), .done(splitter_test_done),
-	.pass(splitter_test_pass), .checked_ops(splitter_checked_ops),
-	.first_fail_request(splitter_first_fail_request),
-	.first_fail_op(splitter_first_fail_op)
-);
+wire op_valid,op_ready,op_write,op_last;
+wire [26:0] op_byte_address;
+wire [3:0] op_words;
+wire write_valid,write_ready,read_valid,read_ready,completion_valid;
+wire [15:0] write_data,read_data;
+wire [1:0] write_byte_enable;
 
 wire [12:0] bist_sdram_a;
 wire [1:0] bist_sdram_ba;
@@ -195,19 +186,31 @@ altddio_out #(.extend_oe_disable("OFF"),.intended_device_family("Cyclone V"),
 	.aclr(1'b0),.aset(1'b0),.oe(1'b1),.outclocken(1'b1),.sclr(1'b0),.sset(1'b0)
 );
 
-sdram_bl8_bist #(.SDRAM_FREQ_HZ(20_000_000)) sdram_test
+sdram_end_to_end_bist #(.SDRAM_FREQ_HZ(20_000_000)) sdram_test
 (
-	.clk(clk_sys), .reset(reset), .test_mode(status[7:6]),
+	.clk(clk_sys), .reset(reset), .test_mode(status[7:6]), .engine_init_done(sdram_init_done),
+	.op_valid(op_valid), .op_ready(op_ready), .op_write(op_write),
+	.op_byte_address(op_byte_address), .op_words(op_words), .op_last(op_last),
+	.write_valid(write_valid), .write_ready(write_ready), .write_data(write_data),
+	.write_byte_enable(write_byte_enable), .read_valid(read_valid), .read_ready(read_ready),
+	.read_data(read_data), .completion_valid(completion_valid),
+	.done(sdram_test_done), .pass(sdram_test_pass), .checked_words(sdram_tested_words),
+	.error_count(sdram_error_count), .first_fail_address(sdram_first_fail_address),
+	.first_fail_expected(sdram_first_fail_expected), .first_fail_observed(sdram_first_fail_observed)
+);
+
+sdram_bl8_op_engine #(.SDRAM_FREQ_HZ(20_000_000)) sdram_engine
+(
+	.clk(clk_sys), .reset(reset), .op_valid(op_valid), .op_ready(op_ready),
+	.op_write(op_write), .op_byte_address(op_byte_address), .op_words(op_words),
+	.write_valid(write_valid), .write_ready(write_ready), .write_data(write_data),
+	.write_byte_enable(write_byte_enable), .read_valid(read_valid), .read_ready(read_ready),
+	.read_data(read_data), .completion_valid(completion_valid),
 	.sdram_a(bist_sdram_a), .sdram_ba(bist_sdram_ba), .sdram_cke(bist_sdram_cke),
 	.sdram_ncs(bist_sdram_ncs), .sdram_nras(bist_sdram_nras), .sdram_ncas(bist_sdram_ncas),
 	.sdram_nwe(bist_sdram_nwe), .sdram_dqml(bist_sdram_dqml), .sdram_dqmh(bist_sdram_dqmh),
 	.sdram_dq_in(phy_sdram_dq_in), .sdram_dq_out(bist_sdram_dq_out),
-	.sdram_dq_oe(bist_sdram_dq_oe), .init_done(sdram_init_done), .test_done(sdram_test_done),
-	.test_pass(sdram_test_pass), .tested_words(sdram_tested_words),
-	.error_count(sdram_error_count), .first_fail_address(sdram_first_fail_address),
-	.first_fail_expected(sdram_first_fail_expected),
-	.first_fail_observed(sdram_first_fail_observed),
-	.first_fail_state(sdram_first_fail_state), .first_fail_beat(sdram_first_fail_beat)
+	.sdram_dq_oe(bist_sdram_dq_oe), .init_done(sdram_init_done)
 );
 
 wire [1:0] col = status[4:3];
@@ -260,7 +263,6 @@ assign VGA_B  = (!col || col == 3) ? video : 8'd0;
 reg  [26:0] act_cnt;
 always @(posedge clk_sys) act_cnt <= act_cnt + 1'd1; 
 // Off while running, solid on for pass, flashing for failure.
-assign LED_USER = (sdram_test_done && splitter_test_done) ?
-	((sdram_test_pass && splitter_test_pass) ? 1'b1 : act_cnt[22]) : 1'b0;
+assign LED_USER = sdram_test_done ? (sdram_test_pass ? 1'b1 : act_cnt[22]) : 1'b0;
 
 endmodule
