@@ -27,6 +27,14 @@ Changing the option automatically resets and reruns SDRAM initialization. DQM
 is carried in the CAS-cycle `SDRAM_A[12:11]` bits and launched from that same
 packed vector, matching established MiSTer SDRAM controllers.
 
+A synthesized splitter self-test runs in parallel and contributes to the same
+pass LED. It checks the exact address, word count, write flag, and last marker
+for requests crossing an unaligned BL8 boundary (1+8+1 words), a chip stripe,
+a bank stripe, the 1 KiB half-row transition, and a 2 KiB physical-row
+transition (4+8 words in each case). This stage proves the production splitter
+logic itself; driving its emitted operations through the SDRAM engine is the
+next integration step.
+
 The same pins are tested by `make test` in
 `../../rtl/scanout-sdram-controller` against a behavioral two-chip model. That
 test suite also retains the prior BL1 test as a regression.

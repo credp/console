@@ -1,5 +1,6 @@
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_addr_decode.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_request_splitter.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_splitter_bist.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/presentation_arbiter.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_init_refresh.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/frame_publish.sv

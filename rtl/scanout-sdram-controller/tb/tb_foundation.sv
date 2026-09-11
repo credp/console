@@ -4,6 +4,9 @@ module tb_foundation;
     logic [26:0] a; logic chip,bs; logic [1:0] bank; logic [12:0] row; logic [9:0] col;
     sdram_addr_decode dut_addr(.byte_address(a),.chip(chip),.bank(bank),.row(row),.column(col),.byte_select(bs));
     logic rv,rr,rw,ov,ordy,ow,olast; logic [26:0] ra,oa; logic [15:0] words; logic [3:0] owds;
+    wire sb_done,sb_pass;wire[7:0]sb_ops;wire[3:0]sb_fail_req;wire[1:0]sb_fail_op;
+    sdram_splitter_bist splitter_bist(.clk,.reset,.done(sb_done),.pass(sb_pass),
+      .checked_ops(sb_ops),.first_fail_request(sb_fail_req),.first_fail_op(sb_fail_op));
     sdram_request_splitter dut_split(.clk,.reset,.req_valid(rv),.req_ready(rr),.req_write(rw),
       .req_byte_address(ra),.req_words(words),.op_valid(ov),.op_ready(ordy),.op_write(ow),
       .op_byte_address(oa),.op_words(owds),.op_last(olast));
@@ -20,6 +23,8 @@ module tb_foundation;
         ordy=1;
         @(negedge clk); #1;
         if(!ov || owds!=4 || oa!=2048 || !olast) $fatal(1,"second split");
+        wait(sb_done); #1;
+        if(!sb_pass||sb_ops!=11)$fatal(1,"splitter BIST failed ops=%0d req=%0d op=%0d",sb_ops,sb_fail_req,sb_fail_op);
         $display("PASS foundation"); $finish;
     end
 endmodule

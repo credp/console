@@ -133,6 +133,19 @@ wire [15:0] sdram_first_fail_expected;
 wire [15:0] sdram_first_fail_observed;
 wire [5:0] sdram_first_fail_state;
 wire [2:0] sdram_first_fail_beat;
+wire splitter_test_done;
+wire splitter_test_pass;
+wire [7:0] splitter_checked_ops;
+wire [3:0] splitter_first_fail_request;
+wire [1:0] splitter_first_fail_op;
+
+sdram_splitter_bist splitter_test
+(
+	.clk(clk_sys), .reset(reset), .done(splitter_test_done),
+	.pass(splitter_test_pass), .checked_ops(splitter_checked_ops),
+	.first_fail_request(splitter_first_fail_request),
+	.first_fail_op(splitter_first_fail_op)
+);
 
 wire [12:0] bist_sdram_a;
 wire [1:0] bist_sdram_ba;
@@ -247,6 +260,7 @@ assign VGA_B  = (!col || col == 3) ? video : 8'd0;
 reg  [26:0] act_cnt;
 always @(posedge clk_sys) act_cnt <= act_cnt + 1'd1; 
 // Off while running, solid on for pass, flashing for failure.
-assign LED_USER = sdram_test_done ? (sdram_test_pass ? 1'b1 : act_cnt[22]) : 1'b0;
+assign LED_USER = (sdram_test_done && splitter_test_done) ?
+	((sdram_test_pass && splitter_test_pass) ? 1'b1 : act_cnt[22]) : 1'b0;
 
 endmodule

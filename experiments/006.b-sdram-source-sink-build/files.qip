@@ -5,3 +5,5 @@ set_global_assignment -name SDC_FILE Template.sdc
 set_global_assignment -name SYSTEMVERILOG_FILE Template.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/scanout-sdram-controller/rtl/sdram_bl8_bist.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/scanout-sdram-controller/rtl/sdram_addr_decode.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/scanout-sdram-controller/rtl/sdram_request_splitter.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/scanout-sdram-controller/rtl/sdram_splitter_bist.sv
