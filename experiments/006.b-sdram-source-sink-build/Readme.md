@@ -1,16 +1,30 @@
-# SDRAM pin-level read/write experiment
+# SDRAM BL8 source/sink experiment
 
 Generated from Template_MiSTer revision 14d9ed0. The 20 MHz template PLL drives
 both the controller and `SDRAM_CLK`. After datasheet-style initialization the
-self-test first writes all and then reads all 256 patterned words, spanning both
-complementary chip selects, all four banks, and 32 rows. Periodic refreshes run
-during both phases, and read data is deliberately sampled on the falling edge
-after the CL3 return edge. The diagnostic uses BL1 at a conservative 20 MHz;
-it is not the production BL8 datapath. `LED_USER` is solid on for pass,
-flashing for failure, and off while the test runs.
+self-test programs sequential BL8 with CAS latency 3. For each of both chips and
+all four banks it tests bursts beginning at columns 0, 8, and 1016. Each case
+writes an eight-word baseline, optionally overwrites selected bytes, and reads
+and checks all eight words in order. Hardware capture probing established that
+the correct registered read position is CL+0. This is the
+first production-data-path milestone; request splitting, bank scheduling,
+traffic-time refresh, FIFOs, and tagged completion are still to follow.
+
+`LED_USER` is solid on after all 192 comparisons pass, flashing after any
+failure, and off while the test runs. The reusable diagnostic also retains a
+saturating error count and the address, beat, expected value, observed value,
+and state of the first failure. These fields are not yet exported by this
+experiment's LED-only frontend.
+
+The `SDRAM test` option selects the unmasked BL8 baseline, alternating low and
+high byte overwrites, low-byte-only overwrites, or high-byte-only overwrites.
+Changing the option automatically resets and reruns SDRAM initialization. DQM
+is carried in the CAS-cycle `SDRAM_A[12:11]` bits and launched from that same
+packed vector, matching established MiSTer SDRAM controllers.
 
 The same pins are tested by `make test` in
-`../../rtl/scanout-sdram-controller` against a behavioral two-chip model.
+`../../rtl/scanout-sdram-controller` against a behavioral two-chip model. That
+test suite also retains the prior BL1 test as a regression.
 
 ## Upstream template documentation
 

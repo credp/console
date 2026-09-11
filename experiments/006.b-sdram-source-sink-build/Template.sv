@@ -74,7 +74,7 @@ localparam CONF_STR = {
 	"P2-, -= Options in page 2 =-;",
 	"P2-;",
 	"P2S0,DSK;",
-	"P2O[7:6],Option 2,1,2,3,4;",
+	"P2O[7:6],SDRAM test,BL8 baseline,Alternate DQM,Low byte DQM,High byte DQM;",
 	"-;",
 	"-;",
 	"T[0],Reset;",
@@ -118,25 +118,83 @@ pll pll
 	.locked(pll_locked)
 );
 
-wire reset = RESET | status[0] | buttons[1] | ~pll_locked;
+reg [1:0] previous_sdram_test_mode = 0;
+always @(posedge clk_sys) previous_sdram_test_mode <= status[7:6];
+wire reset = RESET | status[0] | buttons[1] | ~pll_locked |
+	(previous_sdram_test_mode != status[7:6]);
 
 wire sdram_init_done;
 wire sdram_test_done;
 wire sdram_test_pass;
-wire [15:0] sdram_expected;
-wire [15:0] sdram_observed;
-wire [15:0] sdram_tested_words;
+wire [31:0] sdram_tested_words;
+wire [31:0] sdram_error_count;
+wire [26:0] sdram_first_fail_address;
+wire [15:0] sdram_first_fail_expected;
+wire [15:0] sdram_first_fail_observed;
+wire [5:0] sdram_first_fail_state;
+wire [2:0] sdram_first_fail_beat;
 
-assign SDRAM_CLK = clk_sys;
-sdram_rw_bist #(.SDRAM_FREQ_HZ(20_000_000), .TEST_WORDS(256)) sdram_test
+wire [12:0] bist_sdram_a;
+wire [1:0] bist_sdram_ba;
+wire bist_sdram_cke, bist_sdram_ncs, bist_sdram_nras, bist_sdram_ncas, bist_sdram_nwe;
+wire bist_sdram_dqml, bist_sdram_dqmh, bist_sdram_dq_oe;
+wire [15:0] bist_sdram_dq_out;
+reg [12:0] phy_sdram_a;
+reg [1:0] phy_sdram_ba;
+reg phy_sdram_cke, phy_sdram_ncs, phy_sdram_nras, phy_sdram_ncas, phy_sdram_nwe;
+reg phy_sdram_dqml, phy_sdram_dqmh, phy_sdram_dq_oe;
+reg [15:0] phy_sdram_dq_out;
+reg [15:0] phy_sdram_dq_in;
+
+// Use the same edge convention as the proven MiSTer PHY: launch from packed
+// I/O registers, then let the inverted forwarded clock sample half a cycle later.
+always @(posedge clk_sys) begin
+	phy_sdram_a <= bist_sdram_a;
+	phy_sdram_ba <= bist_sdram_ba;
+	phy_sdram_cke <= bist_sdram_cke;
+	phy_sdram_ncs <= bist_sdram_ncs;
+	phy_sdram_nras <= bist_sdram_nras;
+	phy_sdram_ncas <= bist_sdram_ncas;
+	phy_sdram_nwe <= bist_sdram_nwe;
+	phy_sdram_dqml <= bist_sdram_a[11];
+	phy_sdram_dqmh <= bist_sdram_a[12];
+	phy_sdram_dq_oe <= bist_sdram_dq_oe;
+	phy_sdram_dq_out <= bist_sdram_dq_out;
+	phy_sdram_dq_in <= SDRAM_DQ;
+end
+
+assign SDRAM_A = phy_sdram_a;
+assign SDRAM_BA = phy_sdram_ba;
+assign SDRAM_CKE = phy_sdram_cke;
+assign SDRAM_nCS = phy_sdram_ncs;
+assign SDRAM_nRAS = phy_sdram_nras;
+assign SDRAM_nCAS = phy_sdram_ncas;
+assign SDRAM_nWE = phy_sdram_nwe;
+assign SDRAM_DQML = phy_sdram_dqml;
+assign SDRAM_DQMH = phy_sdram_dqmh;
+assign SDRAM_DQ = phy_sdram_dq_oe ? phy_sdram_dq_out : 16'hzzzz;
+
+altddio_out #(.extend_oe_disable("OFF"),.intended_device_family("Cyclone V"),
+	.invert_output("OFF"),.lpm_hint("UNUSED"),.lpm_type("altddio_out"),
+	.oe_reg("UNREGISTERED"),.power_up_high("OFF"),.width(1)) sdramclk_ddr
 (
-	.clk(clk_sys), .reset(reset),
-	.sdram_a(SDRAM_A), .sdram_ba(SDRAM_BA), .sdram_cke(SDRAM_CKE),
-	.sdram_ncs(SDRAM_nCS), .sdram_nras(SDRAM_nRAS), .sdram_ncas(SDRAM_nCAS),
-	.sdram_nwe(SDRAM_nWE), .sdram_dqml(SDRAM_DQML), .sdram_dqmh(SDRAM_DQMH),
-	.sdram_dq(SDRAM_DQ), .init_done(sdram_init_done), .test_done(sdram_test_done),
-	.test_pass(sdram_test_pass), .expected_data(sdram_expected),
-	.observed_data(sdram_observed), .tested_words(sdram_tested_words)
+	.datain_h(1'b0),.datain_l(1'b1),.outclock(clk_sys),.dataout(SDRAM_CLK),
+	.aclr(1'b0),.aset(1'b0),.oe(1'b1),.outclocken(1'b1),.sclr(1'b0),.sset(1'b0)
+);
+
+sdram_bl8_bist #(.SDRAM_FREQ_HZ(20_000_000)) sdram_test
+(
+	.clk(clk_sys), .reset(reset), .test_mode(status[7:6]),
+	.sdram_a(bist_sdram_a), .sdram_ba(bist_sdram_ba), .sdram_cke(bist_sdram_cke),
+	.sdram_ncs(bist_sdram_ncs), .sdram_nras(bist_sdram_nras), .sdram_ncas(bist_sdram_ncas),
+	.sdram_nwe(bist_sdram_nwe), .sdram_dqml(bist_sdram_dqml), .sdram_dqmh(bist_sdram_dqmh),
+	.sdram_dq_in(phy_sdram_dq_in), .sdram_dq_out(bist_sdram_dq_out),
+	.sdram_dq_oe(bist_sdram_dq_oe), .init_done(sdram_init_done), .test_done(sdram_test_done),
+	.test_pass(sdram_test_pass), .tested_words(sdram_tested_words),
+	.error_count(sdram_error_count), .first_fail_address(sdram_first_fail_address),
+	.first_fail_expected(sdram_first_fail_expected),
+	.first_fail_observed(sdram_first_fail_observed),
+	.first_fail_state(sdram_first_fail_state), .first_fail_beat(sdram_first_fail_beat)
 );
 
 wire [1:0] col = status[4:3];
