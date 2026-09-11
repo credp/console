@@ -6,5 +6,6 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/frame_publish.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_bram_fifo.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/presentation_fifos.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_rw_bist.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_bl8_bist.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/capture_flush_guard.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/presentation_mode_control.sv

@@ -16,6 +16,7 @@
 //
 //============================================================================
 
+`include "rtl/experiment_config.vh"
 module emu
 (
 	`include "sys/emu_ports.vh"
@@ -109,34 +110,93 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 ///////////////////////   CLOCKS   ///////////////////////////////
 
 wire clk_sys;
+wire clk_sdram;
+wire clk_capture;
 wire pll_locked;
 pll pll
 (
 	.refclk(CLK_50M),
 	.rst(0),
 	.outclk_0(clk_sys),
+	.outclk_1(clk_sdram),
+	.outclk_2(clk_capture),
 	.locked(pll_locked)
 );
 
 wire reset = RESET | status[0] | buttons[1] | ~pll_locked;
 
 wire sdram_init_done;
-wire sdram_test_done;
-wire sdram_test_pass;
-wire [15:0] sdram_expected;
-wire [15:0] sdram_observed;
-wire [15:0] sdram_tested_words;
+(* keep *) wire [31:0] sdram_pass_count;
+(* keep *) wire [31:0] sdram_error_count;
+(* keep *) wire [15:0] sdram_first_fail_address;
+(* keep *) wire [15:0] sdram_first_fail_expected;
+(* keep *) wire [15:0] sdram_first_fail_observed;
+(* keep *) wire [4:0] sdram_pattern_number;
 
-assign SDRAM_CLK = clk_sys;
-sdram_rw_bist #(.SDRAM_FREQ_HZ(20_000_000), .TEST_WORDS(256)) sdram_test
+wire [12:0] bist_sdram_a;
+wire [1:0] bist_sdram_ba;
+wire bist_sdram_cke, bist_sdram_ncs, bist_sdram_nras, bist_sdram_ncas, bist_sdram_nwe;
+wire bist_sdram_dqml, bist_sdram_dqmh, bist_sdram_dq_oe;
+wire [15:0] bist_sdram_dq_out;
+reg [12:0] phy_sdram_a;
+reg [1:0] phy_sdram_ba;
+reg phy_sdram_cke, phy_sdram_ncs, phy_sdram_nras, phy_sdram_ncas, phy_sdram_nwe;
+reg phy_sdram_dqml, phy_sdram_dqmh, phy_sdram_dq_oe;
+reg [15:0] phy_sdram_dq_out;
+reg [15:0] phy_sdram_dq_in;
+
+// Match MiSTer MemTest: launch from packed I/O registers on the controller
+// rising edge; its inverted forwarded SDRAM clock samples them half a cycle later.
+always @(posedge clk_sdram) begin
+	phy_sdram_a <= bist_sdram_a;
+	phy_sdram_ba <= bist_sdram_ba;
+	phy_sdram_cke <= bist_sdram_cke;
+	phy_sdram_ncs <= bist_sdram_ncs;
+	phy_sdram_nras <= bist_sdram_nras;
+	phy_sdram_ncas <= bist_sdram_ncas;
+	phy_sdram_nwe <= bist_sdram_nwe;
+	phy_sdram_dqml <= bist_sdram_dqml;
+	phy_sdram_dqmh <= bist_sdram_dqmh;
+	phy_sdram_dq_oe <= bist_sdram_dq_oe;
+	phy_sdram_dq_out <= bist_sdram_dq_out;
+end
+
+// This is intentionally adjacent to the top-level pin so FAST_INPUT_REGISTER
+// can place the swept capture register in the I/O cell.
+always @(posedge clk_capture) phy_sdram_dq_in <= SDRAM_DQ;
+
+assign SDRAM_A=phy_sdram_a;
+assign SDRAM_BA=phy_sdram_ba;
+assign SDRAM_CKE=phy_sdram_cke;
+assign SDRAM_nCS=phy_sdram_ncs;
+assign SDRAM_nRAS=phy_sdram_nras;
+assign SDRAM_nCAS=phy_sdram_ncas;
+assign SDRAM_nWE=phy_sdram_nwe;
+assign SDRAM_DQML=phy_sdram_dqml;
+assign SDRAM_DQMH=phy_sdram_dqmh;
+assign SDRAM_DQ=phy_sdram_dq_oe?phy_sdram_dq_out:16'hzzzz;
+
+// Forward the memory clock through a dedicated DDR output cell.
+altddio_out #(.extend_oe_disable("OFF"),.intended_device_family("Cyclone V"),
+	.invert_output("OFF"),.lpm_hint("UNUSED"),.lpm_type("altddio_out"),
+	.oe_reg("UNREGISTERED"),.power_up_high("OFF"),.width(1)) sdramclk_ddr
 (
-	.clk(clk_sys), .reset(reset),
-	.sdram_a(SDRAM_A), .sdram_ba(SDRAM_BA), .sdram_cke(SDRAM_CKE),
-	.sdram_ncs(SDRAM_nCS), .sdram_nras(SDRAM_nRAS), .sdram_ncas(SDRAM_nCAS),
-	.sdram_nwe(SDRAM_nWE), .sdram_dqml(SDRAM_DQML), .sdram_dqmh(SDRAM_DQMH),
-	.sdram_dq(SDRAM_DQ), .init_done(sdram_init_done), .test_done(sdram_test_done),
-	.test_pass(sdram_test_pass), .expected_data(sdram_expected),
-	.observed_data(sdram_observed), .tested_words(sdram_tested_words)
+	.datain_h(1'b0),.datain_l(1'b1),.outclock(clk_sdram),.dataout(SDRAM_CLK),
+	.aclr(1'b0),.aset(1'b0),.oe(1'b1),.outclocken(1'b1),.sclr(1'b0),.sset(1'b0)
+);
+
+sdram_frequency_bist #(.SDRAM_FREQ_HZ(`SDRAM_FREQ_HZ)) sdram_test
+(
+	.clk(clk_sdram), .reset(reset), .sdram_dq_in(phy_sdram_dq_in),
+	.sdram_a(bist_sdram_a), .sdram_ba(bist_sdram_ba), .sdram_cke(bist_sdram_cke),
+	.sdram_ncs(bist_sdram_ncs), .sdram_nras(bist_sdram_nras), .sdram_ncas(bist_sdram_ncas),
+	.sdram_nwe(bist_sdram_nwe), .sdram_dqml(bist_sdram_dqml), .sdram_dqmh(bist_sdram_dqmh),
+	.sdram_dq_out(bist_sdram_dq_out), .sdram_dq_oe(bist_sdram_dq_oe), .init_done(sdram_init_done),
+	.pass_count(sdram_pass_count), .error_count(sdram_error_count),
+	.first_fail_address(sdram_first_fail_address),
+	.first_fail_expected(sdram_first_fail_expected),
+	.first_fail_observed(sdram_first_fail_observed),
+	.pattern_number(sdram_pattern_number)
 );
 
 wire [1:0] col = status[4:3];
@@ -188,7 +248,8 @@ assign VGA_B  = (!col || col == 3) ? video : 8'd0;
 
 reg  [26:0] act_cnt;
 always @(posedge clk_sys) act_cnt <= act_cnt + 1'd1; 
-// Off while running, solid on for pass, flashing for failure.
-assign LED_USER = sdram_test_done ? (sdram_test_pass ? 1'b1 : act_cnt[22]) : 1'b0;
+// Match experiment 005's unambiguous convention: off until a complete sweep,
+// solid on while clean, and flashing only after a compare error.
+assign LED_USER = |sdram_error_count ? act_cnt[20] : |sdram_pass_count;
 
 endmodule

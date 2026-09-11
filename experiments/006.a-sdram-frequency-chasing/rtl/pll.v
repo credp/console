@@ -8,14 +8,18 @@
 module pll (
 		input  wire  refclk,   //  refclk.clk
 		input  wire  rst,      //   reset.reset
-		output wire  outclk_0, // outclk0.clk
+		output wire  outclk_0, // 20 MHz MiSTer framework/video clock
+		output wire  outclk_1, // command and SDRAM clock
+		output wire  outclk_2, // phase-swept DQ capture clock
 		output wire  locked    //  locked.export
 	);
 
 	pll_0002 pll_inst (
 		.refclk   (refclk),   //  refclk.clk
 		.rst      (rst),      //   reset.reset
-		.outclk_0 (outclk_0), // outclk0.clk
+		.outclk_0 (outclk_0),
+		.outclk_1 (outclk_1),
+		.outclk_2 (outclk_2),
 		.locked   (locked)    //  locked.export
 	);
 
