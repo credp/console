@@ -35,26 +35,34 @@ module sdram_bl8_bist #(
  state_t state;
  longint unsigned timer;
  integer refresh_count;
- logic[4:0]case_index;
+ logic[5:0]case_index;
  logic[2:0]beat;
  logic[1:0]pass_phase;
 
- wire target_chip=(case_index>=12);
- wire[3:0]case_within_chip=target_chip?(case_index-12):case_index;
- wire[1:0]target_bank=case_within_chip/3;
- wire[1:0]column_case=case_within_chip%3;
- wire[9:0]base_column=(column_case==0)?10'd0:(column_case==1)?10'd8:10'd1016;
- wire[12:0]target_row={8'b0,case_index};
- wire[9:0]current_column=base_column+beat;
- wire[26:0]current_byte_address={1'b0,target_chip,target_bank,target_row,current_column};
+ wire[4:0]logical_stripe=case_index/3;
+ wire[1:0]position_in_stripe=case_index%3;
+ wire[9:0]logical_offset=(position_in_stripe==0)?10'd0:
+                          (position_in_stripe==1)?10'd16:10'd1008;
+ wire[26:0]logical_byte_address={logical_stripe,10'b0}+logical_offset;
+ wire target_chip;
+ wire[1:0]target_bank;
+ wire[12:0]target_row;
+ wire[9:0]base_column;
+ wire decoded_byte_select;
+ wire[10:0]decoded_contiguous_words;
+ wire[26:0]current_byte_address=logical_byte_address+{23'b0,beat,1'b0};
+ sdram_addr_decode #(.MAPPING(5)) address_decode(
+  .byte_address(logical_byte_address),.chip(target_chip),.bank(target_bank),
+  .row(target_row),.column(base_column),.byte_select(decoded_byte_select),
+  .contiguous_words(decoded_contiguous_words));
 
- function automatic[15:0]base_pattern(input[4:0]c,input[2:0]b);
-  base_pattern=16'h39c5^{c,3'b0,b,c}^{8'h00,{c,b}};
+ function automatic[15:0]base_pattern(input[5:0]c,input[2:0]b);
+  base_pattern=16'h39c5^{7'b0,c,b}^{7'b0,b,c};
  endfunction
- function automatic[15:0]overlay_pattern(input[4:0]c,input[2:0]b);
-  overlay_pattern=16'ha61e^{b,c,3'b0}^{8'h5a,{b,c}};
+ function automatic[15:0]overlay_pattern(input[5:0]c,input[2:0]b);
+  overlay_pattern=16'ha61e^{7'b0,b,c}^{7'b0,c,b};
  endfunction
- function automatic[15:0]expected_pattern(input[4:0]c,input[2:0]b,input[1:0]mode);
+ function automatic[15:0]expected_pattern(input[5:0]c,input[2:0]b,input[1:0]mode);
   reg[15:0]base,over;
   begin
    base=base_pattern(c,b);over=overlay_pattern(c,b);
@@ -170,7 +178,7 @@ module sdram_bl8_bist #(
     if(beat==7)state<=NEXT_CASE;
     else beat<=beat+1'b1;
    end
-   NEXT_CASE:if(case_index!=5'd23)begin case_index<=case_index+1'b1;state<=CASE_START;end
+   NEXT_CASE:if(case_index!=6'd47)begin case_index<=case_index+1'b1;state<=CASE_START;end
    else begin
     case_index<=0;
     case(pass_phase)

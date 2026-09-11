@@ -17,7 +17,7 @@ build/tb_pin_bist.vvp: rtl/sdram_rw_bist.sv tb/pin-model/sdram_pair_model.sv tb/
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_pin_bist -o $@ $^
 
-build/tb_pin_bl8_bist.vvp: rtl/sdram_bl8_bist.sv tb/pin-model/sdram_pair_model.sv tb/tb_pin_bl8_bist.sv
+build/tb_pin_bl8_bist.vvp: rtl/sdram_addr_decode.sv rtl/sdram_bl8_bist.sv tb/pin-model/sdram_pair_model.sv tb/tb_pin_bl8_bist.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_pin_bl8_bist -o $@ $^
 

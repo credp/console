@@ -2,8 +2,10 @@
 
 Generated from Template_MiSTer revision 14d9ed0. The 20 MHz template PLL drives
 both the controller and `SDRAM_CLK`. After datasheet-style initialization the
-self-test programs sequential BL8 with CAS latency 3. For each of both chips and
-all four banks it tests bursts beginning at columns 0, 8, and 1016. Each case
+self-test programs sequential BL8 with CAS latency 3. Logical byte addresses
+are passed through the production `stripe-1k-bank-chip` decoder. Across the
+first sixteen 1 KiB stripes it exercises both chips, all four banks, both halves
+of a physical row, and bursts at the start, middle, and end of every stripe. Each case
 writes address-and-beat-derived data during a complete write pass. DQM modes
 then perform a separate masked-overwrite pass. The controller waits 1 ms after
 all writes have finished before beginning a distinct address-derived read and

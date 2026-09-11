@@ -33,7 +33,7 @@ module tb_pin_bl8_bist;
    begin
     for(mode=0;mode<4;mode=mode+1)begin
      test_mode=mode;reset=1;repeat(3)@(posedge clk);reset=0;wait(done);
-     if(!pass||tested!=192||errors!=0)$fatal(1,"BL8 mode %0d failed tested=%0d errors=%0d address=%h beat=%0d exp=%h got=%h",mode,tested,errors,fail_address,fail_beat,fail_expected,fail_observed);
+     if(!pass||tested!=384||errors!=0)$fatal(1,"BL8 mode %0d failed tested=%0d errors=%0d address=%h beat=%0d exp=%h got=%h",mode,tested,errors,fail_address,fail_beat,fail_expected,fail_observed);
      $display("PASS BL8 mode %0d: %0d ordered words",mode,tested);
     end
     $display("PASS BL8 pin BIST across both chips, all banks, row-end bursts, and all DQM modes");
