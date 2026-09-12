@@ -4,12 +4,13 @@ CAD_SUITE ?= /home/chris/Projects/oss-cad-suite
 RTL := $(wildcard rtl/*.sv)
 
 .PHONY: test lint formal clean
-test: build/tb_foundation.vvp build/tb_bank_timing.vvp build/tb_dq_turnaround.vvp build/tb_open_row_scheduler.vvp build/tb_bl8_phy_engine.vvp build/tb_pin_bist.vvp build/tb_pin_bl8_bist.vvp build/tb_pin_end_to_end.vvp
+test: build/tb_foundation.vvp build/tb_bank_timing.vvp build/tb_dq_turnaround.vvp build/tb_open_row_scheduler.vvp build/tb_bl8_phy_engine.vvp build/tb_open_row_core.vvp build/tb_pin_bist.vvp build/tb_pin_bl8_bist.vvp build/tb_pin_end_to_end.vvp
 	$(VVP) build/tb_foundation.vvp
 	$(VVP) build/tb_bank_timing.vvp
 	$(VVP) build/tb_dq_turnaround.vvp
 	$(VVP) build/tb_open_row_scheduler.vvp
 	$(VVP) build/tb_bl8_phy_engine.vvp
+	$(VVP) build/tb_open_row_core.vvp
 	$(VVP) build/tb_pin_bist.vvp
 	$(VVP) build/tb_pin_bl8_bist.vvp
 	$(VVP) build/tb_pin_end_to_end.vvp
@@ -33,6 +34,10 @@ build/tb_dq_turnaround.vvp: rtl/sdram_dq_turnaround.sv tb/tb_dq_turnaround.sv
 build/tb_bl8_phy_engine.vvp: rtl/sdram_bl8_phy_engine.sv tb/pin-model/sdram_pair_model.sv tb/tb_bl8_phy_engine.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_bl8_phy_engine -o $@ $^
+
+build/tb_open_row_core.vvp: rtl/sdram_bank_timing.sv rtl/sdram_dq_turnaround.sv rtl/sdram_open_row_scheduler.sv rtl/sdram_bl8_phy_engine.sv rtl/sdram_open_row_core.sv tb/pin-model/sdram_pair_model.sv tb/tb_open_row_core.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_open_row_core -o $@ $^
 
 build/tb_pin_bist.vvp: rtl/sdram_rw_bist.sv tb/pin-model/sdram_pair_model.sv tb/tb_pin_bist.sv
 	mkdir -p build

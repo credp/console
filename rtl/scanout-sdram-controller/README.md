@@ -39,6 +39,11 @@ Implemented and independently testable:
   write clocks or `READ_CAPTURE_CYCLES + 8` read clocks. Initialization and the
   board-specific input register/capture phase intentionally remain outside this
   engine.
+- an additive open-row core integrating that engine with the scheduler. It
+  latches a complete write payload at operation acceptance, keeps it stable
+  across any PRECHARGE/ACTIVATE work, and returns reads as complete atomic BL8
+  payloads. Directed pin-model tests cover closed-bank, row-hit, and
+  row-conflict write/read round trips.
 
 Run `make test` for directed tests, `make lint` for Verilator lint, and
 `make formal` for SymbiYosys proofs of open-row command legality, bounded BL8
@@ -51,8 +56,8 @@ The new scheduler is deliberately not connected to the hardware-qualified 006.b
 experiment or its conservative BL8 engine. Its refresh request port is not yet
 a refresh deadline generator: bounding request-to-service latency requires the
 physical burst engine to provide a bounded operation duration. The new BL8
-engine establishes that local bound, but scheduler/engine payload integration,
-deadline generation, and multi-operation scheduling must be added
+engine and open-row core establish that local bound. Deadline generation and
+multi-operation scheduling must be added
 and verified before creating a successor hardware experiment. The production
 board-facing DQ PHY, asynchronous CDC FIFOs, complete multi-client queues,
 counters, and full-frame acceptance harness also remain integration work. The
