@@ -21,5 +21,6 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_initialized_runtime.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_single_client_adapter.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_two_client_adapter.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_single_client_controller.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_two_client_controller.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/capture_flush_guard.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/presentation_mode_control.sv

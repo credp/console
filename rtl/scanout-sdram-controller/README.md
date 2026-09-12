@@ -85,6 +85,12 @@ Implemented and independently testable:
   two boundary-splitting writes and reads, checks exact per-client ordering and
   accounting, and demonstrates peer completion while the other read stream is
   deliberately stalled.
+- a thin initialized two-client controller wrapper. It composes that
+  transaction layer with the same `sdram_initialized_runtime` used by the
+  single-client controller, so initialization, refresh epoch, and pin ownership
+  have one implementation. Its integration test holds both clients valid
+  across initialization and checks that they are admitted together only after
+  handoff while runtime refresh proceeds for both chips.
 
 Run `make test` for directed tests, `make lint` for Verilator lint, and
 `make formal` for SymbiYosys proofs of open-row command legality, bounded BL8
@@ -104,9 +110,30 @@ uses it as an explicit contract. Their runtime composition is tested under
 sustained traffic. The composed wrapper provides the first directly usable,
 initialization-aware request interface. The first two-client transaction and
 response-reservation layer is independently tested; deeper multi-entry queues,
-priority policy, and integration with initialization must be added
+priority policy, and full queued-data-path testing must be added
 and verified before creating a successor hardware experiment. The production
 board-facing DQ PHY, asynchronous CDC FIFOs, complete multi-client queues,
 counters, and full-frame acceptance harness also remain integration work. The
 modules here deliberately expose clean boundaries for those pieces; this is not
 yet a complete presentation controller and no 122 MB/s claim applies to it.
+
+## Reading the transaction path
+
+Read the active path from the outside inward:
+
+1. `sdram_single_client_controller.sv` or
+   `sdram_two_client_controller.sv` is the thin top-level composition.
+2. `sdram_single_client_adapter.sv` defines one architecture request's
+   validation, write staging, splitting, read serialization, and completion
+   semantics. `sdram_two_client_adapter.sv` duplicates that ownership and adds
+   BL8-boundary arbitration plus one reserved atomic response slot per client.
+3. `sdram_initialized_runtime.sv` owns the one-time handoff from
+   `sdram_init_refresh.sv` to `sdram_runtime_core.sv` and is the only pin mux in
+   this reusable path.
+4. `sdram_runtime_core.sv` and the layers beneath it schedule legal SDRAM
+   commands, enforce timing and DQ turnaround, execute fixed BL8 transfers, and
+   schedule runtime refresh.
+
+The current two-client slots are deliberately one transaction deep. They prove
+ownership and isolation, but they are not substitutes for the deeper request,
+write-data, and read-response FIFOs required by the final controller.
