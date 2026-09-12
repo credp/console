@@ -1,0 +1,16 @@
+[tasks]
+prove
+cover
+[options]
+prove: mode prove
+prove: depth 30
+cover: mode cover
+cover: depth 30
+[engines]
+smtbmc boolector
+[script]
+read -formal -sv sdram_refresh_deadline.sv refresh_deadline_formal.sv
+prep -top refresh_deadline_formal
+[files]
+rtl/sdram_refresh_deadline.sv
+formal/refresh_deadline_formal.sv

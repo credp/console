@@ -15,5 +15,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_open_row_scheduler.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_dq_turnaround.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_bl8_phy_engine.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_open_row_core.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_refresh_deadline.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_runtime_core.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/capture_flush_guard.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/presentation_mode_control.sv

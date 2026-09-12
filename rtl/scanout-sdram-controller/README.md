@@ -44,10 +44,23 @@ Implemented and independently testable:
   across any PRECHARGE/ACTIVATE work, and returns reads as complete atomic BL8
   payloads. Directed pin-model tests cover closed-bank, row-hit, and
   row-conflict write/read round trips.
+- a two-chip runtime refresh deadline generator. It converts the 7.8 us
+  datasheet interval into clocks, staggers the chips by half an interval,
+  raises each persistent request early by the configured downstream service
+  bound plus a registration margin, and resets a chip's age only after the
+  scheduler reports that AUTO REFRESH was issued. Sticky late flags make a
+  violated integration contract observable.
+- a runtime core composing the deadline generator, open-row scheduler, and
+  bounded BL8 engine. Its pin-model test keeps offering row-conflicting writes
+  while checking that useful traffic progresses, refresh preempts only between
+  operations, both chips receive REF within tREFI, and every emitted command
+  remains legal. A one-entry response holder removes client completion
+  backpressure from the physical-operation bound, while still preventing a new
+  client operation from overwriting an unconsumed response.
 
 Run `make test` for directed tests, `make lint` for Verilator lint, and
 `make formal` for SymbiYosys proofs of open-row command legality, bounded BL8
-pin transactions, splitter physical bounds, strict arbiter
+pin transactions, refresh deadline policy, splitter physical bounds, strict arbiter
 priority and grant stability, frame ownership/publication (including simultaneous
 publish/replay), FIFO ordering/conservation, and refresh-command deadlines for
 both open- and closed-bank cases.
@@ -56,8 +69,9 @@ The new scheduler is deliberately not connected to the hardware-qualified 006.b
 experiment or its conservative BL8 engine. Its refresh request port is not yet
 a refresh deadline generator: bounding request-to-service latency requires the
 physical burst engine to provide a bounded operation duration. The new BL8
-engine and open-row core establish that local bound. Deadline generation and
-multi-operation scheduling must be added
+engine and open-row core establish that local bound, and the deadline generator
+uses it as an explicit contract. Their runtime composition is tested under
+sustained traffic. Multi-operation scheduling must be added
 and verified before creating a successor hardware experiment. The production
 board-facing DQ PHY, asynchronous CDC FIFOs, complete multi-client queues,
 counters, and full-frame acceptance harness also remain integration work. The
