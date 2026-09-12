@@ -65,6 +65,7 @@ def main() -> int:
 
         run(["make", "trace-current"], cwd=RTL, env=inherited)
         run(["make", "trace-agg23-stock"], cwd=RTL, env=inherited)
+        run(["make", "trace-agg23-request-layer"], cwd=RTL, env=inherited)
 
     return 0
 

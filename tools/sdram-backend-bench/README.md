@@ -92,6 +92,13 @@ cd rtl/scanout-sdram-controller
 TRACE_MEM=/tmp/machine-capture.mem TRACE_COUNT=123 make trace-agg23-stock
 ```
 
+Replay the same fixture against agg23 behind the clean request-layer wrapper:
+
+```bash
+cd rtl/scanout-sdram-controller
+TRACE_MEM=/tmp/machine-capture.mem TRACE_COUNT=123 make trace-agg23-request-layer
+```
+
 This replay target is intentionally a result collector, not a controller model:
 the testbench offers each trace request no earlier than `issue_time_ns`, obeys
 the controller handshakes, and reports acceptance delay, completion latency,
@@ -103,8 +110,6 @@ The smoke matrix currently includes:
 
 - `current_custom`: our existing two-client controller RTL;
 - `agg23_stock`: the stock agg23 single-port controller, with only native
-  single-word replay adaptation.
-
-The third contender, agg23 behind our clean request layer, still needs a
-separate wrapper that instantiates our request/adapter semantics above the
-simple physical backend.
+  single-word replay adaptation;
+- `agg23_request_layer`: a two-client request/completion wrapper over the same
+  stock agg23 single-word backend.

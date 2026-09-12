@@ -4,7 +4,7 @@ VERILATOR ?= verilator
 CAD_SUITE ?= /home/chris/Projects/oss-cad-suite
 RTL := $(wildcard rtl/*.sv)
 
-.PHONY: test lint formal trace-current trace-agg23-stock clean
+.PHONY: test lint formal trace-current trace-agg23-stock trace-agg23-request-layer clean
 test: build/tb_foundation.vvp build/tb_bank_timing.vvp build/tb_dq_turnaround.vvp build/tb_refresh_deadline.vvp build/tb_open_row_scheduler.vvp build/tb_bl8_phy_engine.vvp build/tb_open_row_core.vvp build/tb_runtime_core.vvp build/tb_single_client_adapter.vvp build/tb_two_client_adapter.vvp build/tb_single_client_controller.vvp build/tb_two_client_controller.vvp build/tb_pin_bist.vvp build/tb_pin_bl8_bist.vvp build/tb_pin_end_to_end.vvp
 	$(VVP) build/tb_foundation.vvp
 	$(VVP) build/tb_bank_timing.vvp
@@ -95,6 +95,13 @@ build/obj_agg23_stock/tb_trace_agg23_stock: ../../third_party/agg23-sdram-contro
 
 trace-agg23-stock: build/obj_agg23_stock/tb_trace_agg23_stock
 	build/obj_agg23_stock/tb_trace_agg23_stock +trace_mem=$${TRACE_MEM:?set TRACE_MEM to a trace .mem fixture} +trace_count=$${TRACE_COUNT:?set TRACE_COUNT to fixture row count}
+
+build/obj_agg23_request_layer/tb_trace_agg23_request_layer: ../../third_party/agg23-sdram-controller/sdram.sv tb/pin-model/sdram_pair_model.sv tb/backend-bench/altddio_out_sim.sv tb/backend-bench/agg23_request_layer_wrapper.sv tb/backend-bench/tb_trace_agg23_request_layer.sv
+	mkdir -p build
+	$(VERILATOR) --binary -Wno-fatal --timing --top-module tb_trace_agg23_request_layer --Mdir build/obj_agg23_request_layer -o tb_trace_agg23_request_layer $^
+
+trace-agg23-request-layer: build/obj_agg23_request_layer/tb_trace_agg23_request_layer
+	build/obj_agg23_request_layer/tb_trace_agg23_request_layer +trace_mem=$${TRACE_MEM:?set TRACE_MEM to a trace .mem fixture} +trace_count=$${TRACE_COUNT:?set TRACE_COUNT to fixture row count}
 
 lint:
 	verilator --lint-only -Wall -Wno-fatal --top-module sdram_request_splitter $(RTL)
