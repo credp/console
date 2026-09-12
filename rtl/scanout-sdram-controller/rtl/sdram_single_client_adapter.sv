@@ -46,15 +46,13 @@ module sdram_single_client_adapter #(
 );
     localparam integer COUNT_BITS = (MAX_REQUEST_WORDS > 1) ?
                                     $clog2(MAX_REQUEST_WORDS + 1) : 1;
-    localparam integer INDEX_BITS = (MAX_REQUEST_WORDS > 1) ?
-                                    $clog2(MAX_REQUEST_WORDS) : 1;
-    typedef enum logic [2:0] {IDLE,COLLECT,ISSUE,WAIT_WRITE,
+    typedef enum logic [2:0] {IDLE,LOAD_WRITE,ISSUE,WAIT_WRITE,
                               WAIT_READ,COMPLETE} state_t;
     state_t state;
 
-    logic [15:0] write_buffer [0:MAX_REQUEST_WORDS-1];
-    logic [1:0] enable_buffer [0:MAX_REQUEST_WORDS-1];
-    logic [COUNT_BITS-1:0] collect_count,issued_words;
+    logic [15:0] packet_data [0:7];
+    logic [1:0] packet_enable [0:7];
+    logic [2:0] packet_index;
     logic [LEN_WIDTH-1:0] request_words_q;
     logic error_q;
     logic [TAG_WIDTH-1:0] tag_q;
@@ -72,14 +70,14 @@ module sdram_single_client_adapter #(
     logic [10:0] decoded_contiguous;
     /* verilator lint_on UNUSEDSIGNAL */
     integer payload_index;
-    integer word_index;
 
     assign valid_request = (req_words != 0) &&
                            (req_words <= LEN_WIDTH'(MAX_REQUEST_WORDS)) &&
                            !req_byte_address[0];
     assign req_ready = (state == IDLE) && split_req_ready;
     assign split_req_valid = req_valid && req_ready && valid_request;
-    assign write_ready = (state == COLLECT);
+    assign write_ready = (state == LOAD_WRITE) && split_op_valid &&
+                         ({1'b0, packet_index} < split_op_words);
     assign completion_valid = (state == COMPLETE);
     assign completion_tag = tag_q;
     // "completed words" means words committed by a successful request.  A
@@ -108,13 +106,11 @@ module sdram_single_client_adapter #(
         op_write_data = '0;
         op_write_byte_enable = '0;
         for (payload_index = 0; payload_index < 8; payload_index = payload_index + 1) begin
-            word_index = int'(issued_words);
-            word_index = word_index + payload_index;
-            if (payload_index < split_op_words) begin
+            if (payload_index < current_words) begin
                 op_write_data[payload_index*16 +: 16] =
-                    write_buffer[word_index];
+                    packet_data[payload_index];
                 op_write_byte_enable[payload_index*2 +: 2] =
-                    enable_buffer[word_index];
+                    packet_enable[payload_index];
             end
         end
     end
@@ -133,8 +129,7 @@ module sdram_single_client_adapter #(
     always_ff @(posedge clk) begin
         if (reset) begin
             state <= IDLE;
-            collect_count <= '0;
-            issued_words <= '0;
+            packet_index <= '0;
             request_words_q <= '0;
             tag_q <= '0;
             error_q <= 1'b0;
@@ -147,31 +142,45 @@ module sdram_single_client_adapter #(
                     request_words_q <= req_words;
                     tag_q <= req_tag;
                     error_q <= !valid_request;
-                    collect_count <= '0;
-                    issued_words <= '0;
+                    packet_index <= '0;
                     if (!valid_request) state <= COMPLETE;
-                    else if (req_write) state <= COLLECT;
+                    else if (req_write) state <= LOAD_WRITE;
                     else state <= ISSUE;
                 end
-                COLLECT: if (write_valid && write_ready) begin
-                    write_buffer[collect_count[INDEX_BITS-1:0]] <= write_data;
-                    enable_buffer[collect_count[INDEX_BITS-1:0]] <= write_byte_enable;
-                    if (collect_count == COUNT_BITS'(request_words_q - 1'b1)) begin
-                        collect_count <= '0;
-                        state <= ISSUE;
-                    end else collect_count <= collect_count + 1'b1;
+                LOAD_WRITE: begin
+                    if (split_op_valid && packet_index == '0) begin
+                        packet_enable[0] <= '0;
+                        packet_enable[1] <= '0;
+                        packet_enable[2] <= '0;
+                        packet_enable[3] <= '0;
+                        packet_enable[4] <= '0;
+                        packet_enable[5] <= '0;
+                        packet_enable[6] <= '0;
+                        packet_enable[7] <= '0;
+                    end
+                    if (write_valid && write_ready) begin
+                        packet_data[packet_index] <= write_data;
+                        packet_enable[packet_index] <= write_byte_enable;
+                        if ({1'b0, packet_index} + 4'd1 == split_op_words) begin
+                            current_words <= split_op_words;
+                            current_last <= split_op_last;
+                            packet_index <= '0;
+                            state <= ISSUE;
+                        end else packet_index <= packet_index + 1'b1;
+                    end
                 end
                 ISSUE: if (op_valid && op_ready) begin
-                    current_words <= split_op_words;
-                    current_last <= split_op_last;
-                    read_beat <= '0;
                     if (split_op_write) begin
-                        issued_words <= issued_words + COUNT_BITS'(split_op_words);
                         state <= WAIT_WRITE;
-                    end else state <= WAIT_READ;
+                    end else begin
+                        current_words <= split_op_words;
+                        current_last <= split_op_last;
+                        read_beat <= '0;
+                        state <= WAIT_READ;
+                    end
                 end
                 WAIT_WRITE: if (op_completion_valid && op_completion_ready)
-                    state <= current_last ? COMPLETE : ISSUE;
+                    state <= current_last ? COMPLETE : LOAD_WRITE;
                 WAIT_READ: if (read_valid && read_ready) begin
                     if (read_beat + 1'b1 == current_words) begin
                         read_beat <= '0;
@@ -190,8 +199,7 @@ module sdram_single_client_adapter #(
     always_ff @(posedge clk) begin
         f_past_valid <= 1'b1;
         if (!reset) begin
-            assert(collect_count <= MAX_REQUEST_WORDS);
-            assert(issued_words <= MAX_REQUEST_WORDS);
+            assert(packet_index < 8);
             if (state == ISSUE) begin
                 assert(split_op_words >= 1 && split_op_words <= 8);
                 assert(!decoded_byte_select);
