@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import csv
 from dataclasses import dataclass
+from pathlib import Path
 from statistics import mean
 from typing import Iterable
 
@@ -249,7 +250,86 @@ def workloads() -> list[tuple[str, list[Request]]]:
     return out
 
 
-def run_all(freq_mode: str) -> list[Metrics]:
+TRACE_HEADER = ["cycle", "client", "op", "address", "words", "byte_enable", "tag"]
+
+
+def trace_path_name(name: str) -> str:
+    return f"{name}.csv"
+
+
+def write_trace(path: Path, trace: list[Request]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(TRACE_HEADER)
+        for req in trace:
+            writer.writerow([
+                req.cycle,
+                req.client,
+                req.op,
+                f"0x{req.address:x}",
+                req.words,
+                f"0x{req.byte_enable:x}",
+                req.tag,
+            ])
+
+
+def dump_traces(directory: Path) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    manifest = directory / "manifest.csv"
+    with manifest.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["workload", "file", "requests", "useful_bytes"])
+        for name, trace in workloads():
+            filename = trace_path_name(name)
+            write_trace(directory / filename, trace)
+            writer.writerow([
+                name,
+                filename,
+                len(trace),
+                sum(req.words * 2 for req in trace),
+            ])
+
+
+def parse_int(value: str) -> int:
+    return int(value, 0)
+
+
+def read_trace(path: Path) -> list[Request]:
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames != TRACE_HEADER:
+            raise ValueError(f"{path}: expected header {TRACE_HEADER}, got {reader.fieldnames}")
+        return [
+            Request(
+                cycle=parse_int(row["cycle"]),
+                client=parse_int(row["client"]),
+                op=row["op"],
+                address=parse_int(row["address"]),
+                words=parse_int(row["words"]),
+                byte_enable=parse_int(row["byte_enable"]),
+                tag=parse_int(row["tag"]),
+            )
+            for row in reader
+        ]
+
+
+def load_traces(directory: Path) -> list[tuple[str, list[Request]]]:
+    manifest = directory / "manifest.csv"
+    if manifest.exists():
+        with manifest.open(newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            return [
+                (row["workload"], read_trace(directory / row["file"]))
+                for row in reader
+            ]
+    return [
+        (path.stem, read_trace(path))
+        for path in sorted(directory.glob("*.csv"))
+        if path.name != "manifest.csv"
+    ]
+
+
+def run_all(freq_mode: str, trace_set: list[tuple[str, list[Request]]]) -> list[Metrics]:
     if freq_mode == "equal":
         simple_freq = custom_freq = EQUAL_FREQ_MHZ
     else:
@@ -262,7 +342,7 @@ def run_all(freq_mode: str) -> list[Metrics]:
     ]
     return [
         backend.run(name, trace)
-        for name, trace in workloads()
+        for name, trace in trace_set
         for backend in backends
     ]
 
@@ -309,8 +389,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--clock-mode", choices=["equal", "fmax"], default="equal")
     parser.add_argument("--csv")
+    parser.add_argument("--dump-traces", type=Path)
+    parser.add_argument("--trace-dir", type=Path)
     args = parser.parse_args()
-    rows = run_all(args.clock_mode)
+    if args.dump_traces:
+        dump_traces(args.dump_traces)
+    trace_set = load_traces(args.trace_dir) if args.trace_dir else workloads()
+    rows = run_all(args.clock_mode, trace_set)
     print_summary(rows)
     if args.csv:
         write_csv(args.csv, rows)

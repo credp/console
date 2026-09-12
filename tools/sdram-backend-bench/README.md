@@ -27,3 +27,21 @@ Optional:
 python3 tools/sdram-backend-bench/run_bench.py --csv /tmp/sdram-bench.csv
 ```
 
+Dump deterministic workload traces for RTL/testbench consumption:
+
+```bash
+python3 tools/sdram-backend-bench/run_bench.py --dump-traces /tmp/sdram-traces
+```
+
+Run the command-level models from previously dumped traces:
+
+```bash
+python3 tools/sdram-backend-bench/run_bench.py --trace-dir /tmp/sdram-traces
+```
+
+Trace files use the common CSV format documented in
+`docs/sdram-backend-comparison-plan.md`:
+
+```text
+cycle,client,op,address,words,byte_enable,tag
+```
