@@ -57,10 +57,21 @@ Implemented and independently testable:
   remains legal. A one-entry response holder removes client completion
   backpressure from the physical-operation bound, while still preventing a new
   client operation from overwriting an unconsumed response.
+- a single-client transaction adapter for the architecture-level request
+  shape: byte address, word count, direction, and tag plus streamed write/read
+  data. It collects a complete write request before issue, uses the common
+  boundary splitter, packs useful words and DQM enables into atomic BL8
+  operations, serializes useful read words under arbitrary backpressure, and
+  returns exactly one stable tagged completion with the number of successfully
+  committed words. Invalid zero-length,
+  over-capacity, and odd-address requests complete with an error without
+  touching SDRAM.
 
 Run `make test` for directed tests, `make lint` for Verilator lint, and
 `make formal` for SymbiYosys proofs of open-row command legality, bounded BL8
-pin transactions, refresh deadline policy, splitter physical bounds, strict arbiter
+pin transactions, refresh deadline policy, bounded single-client handshake and
+completion-accounting checks,
+splitter physical bounds, strict arbiter
 priority and grant stability, frame ownership/publication (including simultaneous
 publish/replay), FIFO ordering/conservation, and refresh-command deadlines for
 both open- and closed-bank cases.
@@ -71,7 +82,8 @@ a refresh deadline generator: bounding request-to-service latency requires the
 physical burst engine to provide a bounded operation duration. The new BL8
 engine and open-row core establish that local bound, and the deadline generator
 uses it as an explicit contract. Their runtime composition is tested under
-sustained traffic. Multi-operation scheduling must be added
+sustained traffic. The single-client adapter provides the first directly usable
+request interface; multi-client queuing and scheduling must be added
 and verified before creating a successor hardware experiment. The production
 board-facing DQ PHY, asynchronous CDC FIFOs, complete multi-client queues,
 counters, and full-frame acceptance harness also remain integration work. The
