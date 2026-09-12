@@ -12,10 +12,11 @@ cover: depth 80
 smtbmc boolector
 
 [script]
-read -formal -sv sdram_bank_timing.sv sdram_open_row_scheduler.sv open_row_scheduler_formal.sv
+read -formal -sv sdram_bank_timing.sv sdram_dq_turnaround.sv sdram_open_row_scheduler.sv open_row_scheduler_formal.sv
 prep -top open_row_scheduler_formal
 
 [files]
 rtl/sdram_bank_timing.sv
+rtl/sdram_dq_turnaround.sv
 rtl/sdram_open_row_scheduler.sv
 formal/open_row_scheduler_formal.sv

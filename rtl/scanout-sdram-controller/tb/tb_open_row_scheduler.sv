@@ -5,10 +5,10 @@ module tb_open_row_scheduler;
     logic[1:0]op_bank;logic[12:0]op_row;logic[9:0]op_column;
     logic command_valid,command_ready=1,command_chip,command_all_banks;
     logic[2:0]command;logic[1:0]command_bank;logic[12:0]command_row;logic[9:0]command_column;
-    logic burst_done,completion_valid,completion_ready=1,timing_violation,row_hit;
+    logic burst_done,completion_valid,completion_ready=1,timing_violation,turnaround_blocked,row_hit;
     logic refresh_valid,refresh_ready,refresh_chip,refresh_completion_valid,refresh_completion_ready=1;
     integer cycle=0,act_count=0,pre_count=0,read_count=0,write_count=0;
-    integer last_command_cycle=-1,last_write_end_cycle=-1,last_pre_cycle=-1,last_refresh_cycle=-1;
+    integer last_command_cycle=-1,last_burst_end_cycle=-1,last_write_end_cycle=-1,last_pre_cycle=-1,last_refresh_cycle=-1;
     always #5 clk=~clk;
     always @(posedge clk) begin
       cycle<=cycle+1;
@@ -20,7 +20,10 @@ module tb_open_row_scheduler;
           3'd5:last_refresh_cycle<=cycle;
         endcase
       end
-      if(burst_done&&op_write)last_write_end_cycle<=cycle;
+      if(burst_done)begin
+        last_burst_end_cycle<=cycle;
+        if(op_write)last_write_end_cycle<=cycle;
+      end
     end
     sdram_open_row_scheduler #(.SDRAM_FREQ_HZ(130_000_000)) dut(.*);
     initial begin
@@ -67,6 +70,14 @@ module tb_open_row_scheduler;
       if(cycle-last_write_end_cycle<2)$fatal(1,"PRE violated tWR");
       wait(command_valid&&command==READ);complete_burst();
       if(act_count!=2||pre_count!=1||read_count!=2)$fatal(1,"row-conflict sequence");
+
+      // Opposite-direction row hit still reserves an empty DQ turnaround clock.
+      begin integer read_end;
+        read_end=last_burst_end_cycle;
+        submit(1,0,0,13'h011,10'h012);wait(command_valid&&command==WRITE);
+        if(cycle-read_end<2)$fatal(1,"write command violated DQ turnaround");
+        complete_burst();
+      end
 
       // Backpressure must hold a proposed command and its complete address stable.
       submit(0,1,2,13'h222,10'h155);command_ready=0;wait(command_valid);

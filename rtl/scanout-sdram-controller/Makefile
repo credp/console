@@ -4,9 +4,10 @@ CAD_SUITE ?= /home/chris/Projects/oss-cad-suite
 RTL := $(wildcard rtl/*.sv)
 
 .PHONY: test lint formal clean
-test: build/tb_foundation.vvp build/tb_bank_timing.vvp build/tb_open_row_scheduler.vvp build/tb_pin_bist.vvp build/tb_pin_bl8_bist.vvp build/tb_pin_end_to_end.vvp
+test: build/tb_foundation.vvp build/tb_bank_timing.vvp build/tb_dq_turnaround.vvp build/tb_open_row_scheduler.vvp build/tb_pin_bist.vvp build/tb_pin_bl8_bist.vvp build/tb_pin_end_to_end.vvp
 	$(VVP) build/tb_foundation.vvp
 	$(VVP) build/tb_bank_timing.vvp
+	$(VVP) build/tb_dq_turnaround.vvp
 	$(VVP) build/tb_open_row_scheduler.vvp
 	$(VVP) build/tb_pin_bist.vvp
 	$(VVP) build/tb_pin_bl8_bist.vvp
@@ -20,9 +21,13 @@ build/tb_bank_timing.vvp: rtl/sdram_bank_timing.sv tb/tb_bank_timing.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_bank_timing -o $@ $^
 
-build/tb_open_row_scheduler.vvp: rtl/sdram_bank_timing.sv rtl/sdram_open_row_scheduler.sv tb/tb_open_row_scheduler.sv
+build/tb_open_row_scheduler.vvp: rtl/sdram_bank_timing.sv rtl/sdram_dq_turnaround.sv rtl/sdram_open_row_scheduler.sv tb/tb_open_row_scheduler.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_open_row_scheduler -o $@ $^
+
+build/tb_dq_turnaround.vvp: rtl/sdram_dq_turnaround.sv tb/tb_dq_turnaround.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_dq_turnaround -o $@ $^
 
 build/tb_pin_bist.vvp: rtl/sdram_rw_bist.sv tb/pin-model/sdram_pair_model.sv tb/tb_pin_bist.sv
 	mkdir -p build

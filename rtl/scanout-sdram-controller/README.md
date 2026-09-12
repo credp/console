@@ -25,7 +25,12 @@ Implemented and independently testable:
   holds a proposed command stable under command-bus backpressure. A refresh
   request has priority only between physical operations; it legally closes all
   banks of the selected chip, waits through tRP, and issues AUTO REFRESH without
-  imposing that chip's tRFC recovery on operations targeting the other chip.
+  imposing that chip's tRFC recovery on operations targeting the other chip;
+- a parameterized global DQ-direction guard. It timestamps the final physical
+  burst beat and reserves the configured number of completely empty clocks
+  before an opposite-direction column command. The current scheduler uses this
+  conservative rule in both directions; a future PHY may safely recover some
+  write-to-read command overlap from the configured CAS latency.
 
 Run `make test` for directed tests, `make lint` for Verilator lint, and
 `make formal` for SymbiYosys proofs of open-row command legality, splitter physical bounds, strict arbiter
@@ -36,7 +41,7 @@ both open- and closed-bank cases.
 The new scheduler is deliberately not connected to the hardware-qualified 006.b
 experiment or its conservative BL8 engine. Its refresh request port is not yet
 a refresh deadline generator: bounding request-to-service latency requires the
-physical burst engine to provide a bounded operation duration. DQ turnaround,
+physical burst engine to provide a bounded operation duration. Physical
 data-beat integration, deadline generation, and multi-operation scheduling must be added
 and verified before creating a successor hardware experiment. The production
 board-facing DQ PHY, asynchronous CDC FIFOs, complete multi-client queues,

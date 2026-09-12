@@ -8,6 +8,7 @@ module open_row_scheduler_formal;
     logic op_ready,command_valid,command_chip,command_all_banks,completion_valid;
     logic[2:0]command;logic[1:0]command_bank;logic[12:0]command_row;logic[9:0]command_column;
     logic timing_violation,row_hit;
+    logic turnaround_blocked;
     logic refresh_ready,refresh_completion_valid;
     logic past_valid=0;
 

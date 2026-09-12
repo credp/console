@@ -1,5 +1,6 @@
 module sdram_open_row_scheduler #(
-    parameter longint unsigned SDRAM_FREQ_HZ = 130_000_000
+    parameter longint unsigned SDRAM_FREQ_HZ = 130_000_000,
+    parameter integer DQ_TURNAROUND_CYCLES = 1
 ) (
     input  logic        clk,
     input  logic        reset,
@@ -35,6 +36,7 @@ module sdram_open_row_scheduler #(
     input  logic        completion_ready,
 
     output logic        timing_violation,
+    output logic        turnaround_blocked,
     output logic        row_hit
 );
     localparam logic [2:0] CMD_NOP   = 3'd0;
@@ -58,6 +60,7 @@ module sdram_open_row_scheduler #(
     logic tracker_command_legal;
     logic command_fire;
     logic tracked_burst_done;
+    logic turnaround_ready;
     logic idle0,idle1;
 
     assign op_ready = (state == IDLE) && !refresh_valid;
@@ -79,7 +82,7 @@ module sdram_open_row_scheduler #(
         if (state == RESOLVE) begin
             if (row_hit) begin
                 command = write_q ? CMD_WRITE : CMD_READ;
-                command_valid = write_q ? can_write : can_read;
+                command_valid = (write_q ? can_write : can_read) && turnaround_ready;
             end else if (target_open) begin
                 command = CMD_PRE;
                 command_valid = can_precharge;
@@ -102,6 +105,13 @@ module sdram_open_row_scheduler #(
             end
         end
     end
+
+    // This deliberately conservative boundary waits the configured empty
+    // clocks before issuing an opposite-direction column command. A future
+    // PHY may exploit CAS latency to overlap write-to-read command timing.
+    sdram_dq_turnaround #(.DQ_TURNAROUND_CYCLES(DQ_TURNAROUND_CYCLES)) turnaround (
+        .clk,.reset,.burst_done(tracked_burst_done),.burst_write(write_q),
+        .proposed_write(write_q),.ready(turnaround_ready),.blocked(turnaround_blocked));
 
     sdram_bank_timing #(.SDRAM_FREQ_HZ(SDRAM_FREQ_HZ)) timing (
         .clk,.reset,
@@ -155,6 +165,8 @@ module sdram_open_row_scheduler #(
         f_past_valid <= 1'b1;
         if (!reset) begin
             if (command_fire) assert(tracker_command_legal);
+            if (command_fire && (command == CMD_READ || command == CMD_WRITE))
+                assert(turnaround_ready);
             if (state == WAIT_BURST) assert(!command_valid);
             if (completion_valid) assert(state == COMPLETE);
             if (refresh_completion_valid) assert(state == COMPLETE_REFRESH);
