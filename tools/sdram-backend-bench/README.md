@@ -39,9 +39,24 @@ Run the command-level models from previously dumped traces:
 python3 tools/sdram-backend-bench/run_bench.py --trace-dir /tmp/sdram-traces
 ```
 
+Convert one trace to a `$readmemh`-friendly RTL fixture:
+
+```bash
+python3 tools/sdram-backend-bench/trace_to_mem.py \
+  /tmp/sdram-traces/boundary_cases.csv \
+  /tmp/boundary_cases.mem
+```
+
 Trace files use the common CSV format documented in
 `docs/sdram-backend-comparison-plan.md`:
 
 ```text
 cycle,client,op,address,words,byte_enable,tag
+```
+
+The packed `.mem` record is 96 bits:
+
+```text
+cycle[95:64] client[63:62] write[61] address[60:34]
+words[33:18] byte_enable[17:16] tag[15:0]
 ```
