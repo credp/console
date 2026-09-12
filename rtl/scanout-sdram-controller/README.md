@@ -66,6 +66,13 @@ Implemented and independently testable:
   committed words. Invalid zero-length,
   over-capacity, and odd-address requests complete with an error without
   touching SDRAM.
+- a composed single-client controller wrapper that owns the explicit
+  initialization/runtime handoff. Architecture requests remain backpressured
+  until the power-up, precharge-all, refresh, and mode-register sequence has
+  completed. At that edge the runtime core leaves reset and begins its own
+  staggered refresh-age accounting from a defined zero point. Pin ownership is
+  multiplexed between the initialization sequencer and runtime core; the
+  board-specific registered DQ capture boundary remains external.
 
 Run `make test` for directed tests, `make lint` for Verilator lint, and
 `make formal` for SymbiYosys proofs of open-row command legality, bounded BL8
@@ -82,8 +89,8 @@ a refresh deadline generator: bounding request-to-service latency requires the
 physical burst engine to provide a bounded operation duration. The new BL8
 engine and open-row core establish that local bound, and the deadline generator
 uses it as an explicit contract. Their runtime composition is tested under
-sustained traffic. The single-client adapter provides the first directly usable
-request interface; multi-client queuing and scheduling must be added
+sustained traffic. The composed wrapper provides the first directly usable,
+initialization-aware request interface; multi-client queuing and scheduling must be added
 and verified before creating a successor hardware experiment. The production
 board-facing DQ PHY, asynchronous CDC FIFOs, complete multi-client queues,
 counters, and full-frame acceptance harness also remain integration work. The

@@ -1,7 +1,8 @@
 module sdram_init_refresh #(
  parameter longint unsigned SDRAM_FREQ_HZ=130_000_000, parameter integer CAS_LATENCY=3,
  parameter integer POWERUP_US=200, parameter integer REFRESH_COUNT=8,
- parameter longint unsigned REFRESH_PHASE_CYCLES=0
+ parameter longint unsigned REFRESH_PHASE_CYCLES=0,
+ parameter bit INIT_ONLY=0
 )(input logic clk,reset,input logic chip0_all_banks_idle,chip1_all_banks_idle,input logic command_accept,
  output logic init_done,cke,dqm_hold,command_valid,command_chip,output logic[2:0]command,
  output logic[12:0]command_address,output logic refresh0_block,refresh1_block,late_refresh0,late_refresh1);
@@ -40,7 +41,7 @@ module sdram_init_refresh #(
  always_ff@(posedge clk)begin
   if(reset)begin state<=I_POWER;timer<=0;refs<=0;age0<=0;age1<=0;late_refresh0<=0;late_refresh1<=0;end
   else begin
-   if(init_done)begin
+   if(init_done&&!INIT_ONLY)begin
     age0<=age0+1;age1<=age1+1;
     if(age0>=TREFI&&!(state==R_REF0&&command_accept))late_refresh0<=1;
     if(age1>=TREFI&&!(state==R_REF1&&command_accept))late_refresh1<=1;
@@ -58,7 +59,10 @@ module sdram_init_refresh #(
     I_MRS0:if(command_accept)state<=I_MRS1;
     I_MRS1:if(command_accept)begin state<=I_MRD;timer<=0;end
     I_MRD:if(timer+1>=TMRD)begin state<=I_RUN;age0<=0;age1<=TREFI-PHASE;end else timer<=timer+1;
-    I_RUN:if(due0)begin state<=chip0_all_banks_idle?R_REF0:R_PRE0;timer<=0;end else if(due1)begin state<=chip1_all_banks_idle?R_REF1:R_PRE1;timer<=0;end
+    I_RUN:if(!INIT_ONLY)begin
+     if(due0)begin state<=chip0_all_banks_idle?R_REF0:R_PRE0;timer<=0;end
+     else if(due1)begin state<=chip1_all_banks_idle?R_REF1:R_PRE1;timer<=0;end
+    end
     R_PRE0:if(command_accept)begin state<=R_TRP0;timer<=0;end
     R_TRP0:if(timer+1>=TRP)state<=R_REF0;else timer<=timer+1;
     R_REF0:if(command_accept)begin state<=R_RFC0;timer<=0;age0<=0;end
