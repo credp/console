@@ -44,6 +44,12 @@ Run the generator smoke test:
 python3 tools/sdram-backend-bench/test_generate_trace.py
 ```
 
+Run the current RTL replay smoke matrix:
+
+```bash
+python3 tools/sdram-backend-bench/run_rtl_trace_smoke.py
+```
+
 Use `--frames 1` without `--lines` for a full 720-line frame trace.  Full-frame
 high-load traces are intentionally larger than a smoke trace.
 
@@ -71,3 +77,34 @@ reserved[8:0]
 ```
 
 `deadline_ns` is all ones when the CSV deadline is `-1`.
+
+Replay a converted trace against the current custom RTL controller:
+
+```bash
+cd rtl/scanout-sdram-controller
+TRACE_MEM=/tmp/machine-capture.mem TRACE_COUNT=123 make trace-current
+```
+
+Replay the same fixture against the stock agg23 controller:
+
+```bash
+cd rtl/scanout-sdram-controller
+TRACE_MEM=/tmp/machine-capture.mem TRACE_COUNT=123 make trace-agg23-stock
+```
+
+This replay target is intentionally a result collector, not a controller model:
+the testbench offers each trace request no earlier than `issue_time_ns`, obeys
+the controller handshakes, and reports acceptance delay, completion latency,
+and deadline misses observed from the RTL.  The stock agg23 target additionally
+reports `native_ops`, because multi-word logical trace requests are replayed as
+the simple controller's natural single-word operations.
+
+The smoke matrix currently includes:
+
+- `current_custom`: our existing two-client controller RTL;
+- `agg23_stock`: the stock agg23 single-port controller, with only native
+  single-word replay adaptation.
+
+The third contender, agg23 behind our clean request layer, still needs a
+separate wrapper that instantiates our request/adapter semantics above the
+simple physical backend.

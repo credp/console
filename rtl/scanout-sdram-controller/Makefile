@@ -1,9 +1,10 @@
 IVERILOG ?= iverilog
 VVP ?= vvp
+VERILATOR ?= verilator
 CAD_SUITE ?= /home/chris/Projects/oss-cad-suite
 RTL := $(wildcard rtl/*.sv)
 
-.PHONY: test lint formal clean
+.PHONY: test lint formal trace-current trace-agg23-stock clean
 test: build/tb_foundation.vvp build/tb_bank_timing.vvp build/tb_dq_turnaround.vvp build/tb_refresh_deadline.vvp build/tb_open_row_scheduler.vvp build/tb_bl8_phy_engine.vvp build/tb_open_row_core.vvp build/tb_runtime_core.vvp build/tb_single_client_adapter.vvp build/tb_two_client_adapter.vvp build/tb_single_client_controller.vvp build/tb_two_client_controller.vvp build/tb_pin_bist.vvp build/tb_pin_bl8_bist.vvp build/tb_pin_end_to_end.vvp
 	$(VVP) build/tb_foundation.vvp
 	$(VVP) build/tb_bank_timing.vvp
@@ -80,6 +81,20 @@ build/tb_pin_bl8_bist.vvp: rtl/sdram_addr_decode.sv rtl/sdram_bl8_bist.sv tb/pin
 build/tb_pin_end_to_end.vvp: rtl/sdram_addr_decode.sv rtl/sdram_request_splitter.sv rtl/sdram_bl8_op_engine.sv rtl/sdram_end_to_end_bist.sv tb/pin-model/sdram_pair_model.sv tb/tb_pin_end_to_end.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_pin_end_to_end -o $@ $^
+
+build/tb_trace_current_controller.vvp: rtl/sdram_init_refresh.sv rtl/sdram_addr_decode.sv rtl/sdram_request_splitter.sv rtl/sdram_single_client_adapter.sv rtl/sdram_two_client_adapter.sv rtl/sdram_bank_timing.sv rtl/sdram_dq_turnaround.sv rtl/sdram_open_row_scheduler.sv rtl/sdram_bl8_phy_engine.sv rtl/sdram_open_row_core.sv rtl/sdram_refresh_deadline.sv rtl/sdram_runtime_core.sv rtl/sdram_initialized_runtime.sv rtl/sdram_two_client_controller.sv tb/pin-model/sdram_pair_model.sv tb/backend-bench/tb_trace_current_controller.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_trace_current_controller -o $@ $^
+
+trace-current: build/tb_trace_current_controller.vvp
+	$(VVP) build/tb_trace_current_controller.vvp +trace_mem=$${TRACE_MEM:?set TRACE_MEM to a trace .mem fixture} +trace_count=$${TRACE_COUNT:?set TRACE_COUNT to fixture row count}
+
+build/obj_agg23_stock/tb_trace_agg23_stock: ../../third_party/agg23-sdram-controller/sdram.sv tb/pin-model/sdram_pair_model.sv tb/backend-bench/altddio_out_sim.sv tb/backend-bench/tb_trace_agg23_stock.sv
+	mkdir -p build
+	$(VERILATOR) --binary -Wno-fatal --timing --top-module tb_trace_agg23_stock --Mdir build/obj_agg23_stock -o tb_trace_agg23_stock $^
+
+trace-agg23-stock: build/obj_agg23_stock/tb_trace_agg23_stock
+	build/obj_agg23_stock/tb_trace_agg23_stock +trace_mem=$${TRACE_MEM:?set TRACE_MEM to a trace .mem fixture} +trace_count=$${TRACE_COUNT:?set TRACE_COUNT to fixture row count}
 
 lint:
 	verilator --lint-only -Wall -Wno-fatal --top-module sdram_request_splitter $(RTL)
