@@ -221,6 +221,33 @@ Additional line-buffer elasticity is a stress parameter, not an assumed
 requirement.  The command-level benchmark currently accepts `--line-buffers 2`,
 `3`, or `4` and reports missed deadlines plus minimum slack.
 
+The model now represents each BRAM line buffer explicitly.  A buffer moves
+through these states:
+
+```text
+FREE -> FILLING -> COMPLETE_AVAILABLE -> DRAINING_TO_SDRAM -> FREE
+```
+
+At each source-line completion, the just-filled buffer becomes
+`COMPLETE_AVAILABLE` and its SDRAM drain requests are enqueued exactly once.
+The next ping-pong buffer must be `FREE` before it can become `FILLING`.  If it
+is still `COMPLETE_AVAILABLE` or `DRAINING_TO_SDRAM`, the benchmark records a
+hard video buffer conflict.  This is the real failure condition: the raster
+producer cannot swap into a buffer still owned by capture.
+
+The command-level model asserts impossible ownership transitions, such as
+draining a buffer that is neither complete nor already draining.
+
+Raster timing is also explicit:
+
+- `--raster-mode logical` models exactly 720 active source lines per 1/60 sec
+  frame, with one active line every about 23.15 us.  This deliberately does not
+  assume physical HDMI blanking.
+- `--raster-mode blanked --raster-total-lines N` models a frame with `N` total
+  line periods and 720 active source lines, placing the extra time after the
+  active region as vertical blanking.  This lets later sweeps test whether
+  blanking materially changes SDRAM availability.
+
 Audio capture is modelled as chunked FIFO-like writes.  The baseline is 48 kHz,
 stereo, 16-bit samples, or 192,000 bytes/sec.  The current command-level model
 uses 256-byte audio chunks with one chunk deadline period.
@@ -238,11 +265,12 @@ sequential reads, sequential writes, mixed sequential traffic, random reads,
 random writes, mixed random traffic, poor locality, good locality,
 bank-conflict-heavy traffic, and read/write direction thrashing.
 
-The line-drain packet size is configurable.  A 2560-byte line may be drained as
-one large transaction, several medium transactions, BL8-sized chunks, or another
-implementation-natural size.  This is necessary because the simple high-Fmax
-controller may prefer larger sequential chunks, while the custom backend may be
-less sensitive to packetization.
+The line-drain packet size is a first-class sweep dimension.  A 2560-byte line
+may be drained as one large transaction, several medium transactions, BL8-sized
+chunks, or another implementation-natural size.  The standard command-level
+sweep includes 8, 16, 32, 64, 128, 256, 640, and 1280 16-bit words.  This is
+necessary because the simple high-Fmax controller may prefer larger sequential
+chunks, while the custom backend may be less sensitive to packetization.
 
 ## Metrics
 

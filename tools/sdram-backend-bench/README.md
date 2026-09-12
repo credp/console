@@ -58,6 +58,17 @@ BRAM traffic.
 Use `--frames 1` without `--lines` for a full 720-line frame sweep.  Full-frame
 high-load sweeps are intentionally heavier than the smoke command above.
 
+If `--line-packet-words` is omitted, machine-capture mode sweeps:
+
+```text
+8, 16, 32, 64, 128, 256, 640, 1280
+```
+
+Use repeated `--line-packet-words` options to choose a smaller packet matrix.
+`--raster-mode logical` is the default and means 720 active source lines per
+1/60 sec frame with no assumed HDMI blanking.  `--raster-mode blanked` uses
+`--raster-total-lines` to insert vertical blanking after the active region.
+
 Convert one trace to a `$readmemh`-friendly RTL fixture:
 
 ```bash

@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import csv
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from statistics import mean
 from typing import Iterable
@@ -32,6 +33,13 @@ SOURCE_LINES = 720
 SOURCE_FPS = 60
 AUDIO_BYTES_PER_SEC = 192_000
 AUDIO_CHUNK_BYTES = 256
+
+
+class BufferState(Enum):
+    FREE = "FREE"
+    FILLING = "FILLING"
+    COMPLETE_AVAILABLE = "COMPLETE_AVAILABLE"
+    DRAINING_TO_SDRAM = "DRAINING_TO_SDRAM"
 
 
 @dataclass(frozen=True)
@@ -95,6 +103,9 @@ class DeadlineRequest:
     klass: str
     deadline: int
     line: int = -1
+    buffer: int = -1
+    part: int = 0
+    total_parts: int = 1
 
 
 @dataclass
@@ -103,12 +114,17 @@ class MachineResult:
     backend: str
     freq_mhz: float
     background_kind: str
+    raster_mode: str
+    line_packet_words: int
     background_target_mb_s: float
     background_done_bytes: int
     total_cycles: int
     video_lines: int
     video_misses: int
+    buffer_conflicts: int
     min_video_slack: int
+    worst_video_drain_latency: int
+    line_requests: int
     audio_chunks: int
     audio_misses: int
     min_audio_slack: int
@@ -129,6 +145,23 @@ class MachineResult:
             return 0.0
         seconds = self.total_cycles / (self.freq_mhz * 1_000_000.0)
         return (self.background_done_bytes / 1_000_000.0) / seconds
+
+
+@dataclass(frozen=True)
+class RasterTiming:
+    mode: str
+    line_period: int
+    active_lines: int
+    total_lines: int
+
+
+@dataclass
+class LineBuffer:
+    state: BufferState = BufferState.FREE
+    line: int = -1
+    completed_parts: int = 0
+    total_parts: int = 0
+    drain_start: int = -1
 
 
 def decode(address: int) -> tuple[int, int, int, int]:
@@ -323,16 +356,34 @@ def cycles_for_usec(freq_mhz: float, usec: float) -> int:
     return max(1, round(freq_mhz * usec))
 
 
-def machine_line_period_cycles(freq_mhz: float) -> int:
-    return cycles_for_usec(freq_mhz, 1_000_000.0 / (SOURCE_LINES * SOURCE_FPS))
+def machine_raster_timing(
+    freq_mhz: float,
+    mode: str,
+    active_lines: int = SOURCE_LINES,
+    total_lines: int = SOURCE_LINES,
+) -> RasterTiming:
+    if mode == "logical":
+        line_period = cycles_for_usec(freq_mhz, 1_000_000.0 / (active_lines * SOURCE_FPS))
+        return RasterTiming(mode, line_period, active_lines, active_lines)
+    if total_lines < active_lines:
+        raise ValueError("total raster lines must be >= active lines")
+    line_period = cycles_for_usec(freq_mhz, 1_000_000.0 / (total_lines * SOURCE_FPS))
+    return RasterTiming(mode, line_period, active_lines, total_lines)
 
 
-def packetize_line(line: int, arrival: int, packet_words: int, deadline: int) -> list[DeadlineRequest]:
+def packetize_line(
+    line: int,
+    buffer: int,
+    arrival: int,
+    packet_words: int,
+    deadline: int,
+) -> list[DeadlineRequest]:
     base = 0x200000 + line * VIDEO_LINE_BYTES
     out = []
     remaining = VIDEO_LINE_WORDS
     offset = 0
     part = 0
+    total_parts = (VIDEO_LINE_WORDS + packet_words - 1) // packet_words
     while remaining:
         words = min(remaining, packet_words)
         out.append(DeadlineRequest(
@@ -340,6 +391,9 @@ def packetize_line(line: int, arrival: int, packet_words: int, deadline: int) ->
             "video",
             deadline,
             line,
+            buffer,
+            part,
+            total_parts,
         ))
         offset += words
         remaining -= words
@@ -382,20 +436,17 @@ def build_machine_arrivals(
     backend: BackendModel,
     background_kind: str,
     background_target_mb_s: float,
-    line_buffers: int,
-    line_packet_words: int,
+    raster: RasterTiming,
     frames: int,
-    lines: int | None,
+    lines: int,
 ) -> list[DeadlineRequest]:
-    line_period = machine_line_period_cycles(backend.freq_mhz)
     audio_period = cycles_for_usec(backend.freq_mhz, AUDIO_CHUNK_BYTES / AUDIO_BYTES_PER_SEC * 1_000_000.0)
-    total_lines = lines if lines is not None else SOURCE_LINES * frames
+    total_lines = lines
     arrivals: list[DeadlineRequest] = []
-    for line in range(total_lines):
-        arrival = line * line_period
-        deadline = arrival + (line_buffers - 1) * line_period
-        arrivals.extend(packetize_line(line, arrival, line_packet_words, deadline))
-    audio_chunks = max(1, (total_lines * line_period) // audio_period)
+    total_active_span = total_lines * raster.line_period
+    if total_lines >= raster.active_lines:
+        total_active_span = frames * raster.total_lines * raster.line_period
+    audio_chunks = max(1, total_active_span // audio_period)
     for chunk in range(audio_chunks):
         arrival = chunk * audio_period
         req = Request(arrival, 0, "W", 0x300000 + chunk * AUDIO_CHUNK_BYTES,
@@ -404,7 +455,7 @@ def build_machine_arrivals(
     if background_target_mb_s > 0:
         bytes_per_cycle = background_target_mb_s / backend.freq_mhz
         interval = max(1, round(64 / bytes_per_cycle))
-        background_count = max(1, (total_lines * line_period) // interval)
+        background_count = max(1, total_active_span // interval)
         for index in range(background_count):
             cycle = index * interval
             arrivals.append(DeadlineRequest(
@@ -424,30 +475,82 @@ def run_machine_capture(
     line_packet_words: int,
     frames: int,
     lines: int | None,
+    raster_mode: str,
+    raster_total_lines: int,
 ) -> MachineResult:
+    if line_buffers < 2:
+        raise ValueError("machine capture requires at least two line buffers")
+    if line_packet_words <= 0 or line_packet_words > VIDEO_LINE_WORDS:
+        raise ValueError("line packet words must be in 1..1280")
+    raster = machine_raster_timing(backend.freq_mhz, raster_mode, SOURCE_LINES, raster_total_lines)
+    active_lines = lines if lines is not None else SOURCE_LINES * frames
     arrivals = build_machine_arrivals(
-        backend, background_kind, background_target_mb_s,
-        line_buffers, line_packet_words, frames, lines,
+        backend, background_kind, background_target_mb_s, raster, frames, active_lines,
     )
     pending: list[DeadlineRequest] = []
+    buffers = [LineBuffer() for _ in range(line_buffers)]
+    buffers[0].state = BufferState.FILLING
+    fill_buffer = 0
     state = BackendState()
     metrics = Metrics("machine_capture", backend.name, backend.freq_mhz)
     video_misses = 0
+    buffer_conflicts = 0
     audio_misses = 0
     min_video_slack = 1 << 60
     min_audio_slack = 1 << 60
     video_lines_seen: set[int] = set()
-    completed_line_parts: dict[int, int] = {}
-    expected_parts = (VIDEO_LINE_WORDS + line_packet_words - 1) // line_packet_words
     audio_chunks = 0
     max_queued_lines = 0
     max_latency = 0
+    worst_video_drain_latency = 0
     background_done_bytes = 0
+    line_requests = 0
     index = 0
+    line_number = 0
+    next_line_completion = raster.line_period
 
-    while index < len(arrivals) or pending:
-        if not pending and index < len(arrivals) and state.time < arrivals[index].request.cycle:
-            state.time = arrivals[index].request.cycle
+    def add_line_completion(cycle: int, line: int) -> None:
+        nonlocal fill_buffer, video_misses, buffer_conflicts, line_requests
+        current = buffers[fill_buffer]
+        if current.state != BufferState.FILLING:
+            raise AssertionError(f"buffer {fill_buffer} was {current.state}, not FILLING")
+        current.state = BufferState.COMPLETE_AVAILABLE
+        current.line = line
+        current.completed_parts = 0
+        current.total_parts = (VIDEO_LINE_WORDS + line_packet_words - 1) // line_packet_words
+        current.drain_start = -1
+        deadline = cycle + (line_buffers - 1) * raster.line_period
+        pending.extend(packetize_line(line, fill_buffer, cycle, line_packet_words, deadline))
+        line_requests += current.total_parts
+        next_buffer = (fill_buffer + 1) % line_buffers
+        if buffers[next_buffer].state != BufferState.FREE:
+            video_misses += 1
+            buffer_conflicts += 1
+            pending[:] = [
+                item for item in pending
+                if not (item.klass == "video" and item.buffer == next_buffer)
+            ]
+        buffers[next_buffer].state = BufferState.FILLING
+        buffers[next_buffer].line = line + 1
+        buffers[next_buffer].completed_parts = 0
+        buffers[next_buffer].total_parts = 0
+        buffers[next_buffer].drain_start = -1
+        fill_buffer = next_buffer
+
+    while index < len(arrivals) or pending or line_number < active_lines:
+        next_event = next_line_completion if line_number < active_lines else 1 << 60
+        if index < len(arrivals):
+            next_event = min(next_event, arrivals[index].request.cycle)
+        if not pending and state.time < next_event:
+            state.time = next_event
+        while line_number < active_lines and next_line_completion <= state.time:
+            add_line_completion(next_line_completion, line_number)
+            line_number += 1
+            frame_line = line_number % raster.active_lines
+            if raster.mode == "blanked" and frame_line == 0:
+                next_line_completion += (raster.total_lines - raster.active_lines + 1) * raster.line_period
+            else:
+                next_line_completion += raster.line_period
         while index < len(arrivals) and arrivals[index].request.cycle <= state.time:
             pending.append(arrivals[index])
             index += 1
@@ -464,16 +567,30 @@ def run_machine_capture(
         if state.time < item.request.cycle:
             state.time = item.request.cycle
         start = state.time
+        if item.klass == "video":
+            buffer = buffers[item.buffer]
+            if buffer.state == BufferState.COMPLETE_AVAILABLE:
+                buffer.state = BufferState.DRAINING_TO_SDRAM
+                buffer.drain_start = start
+            elif buffer.state != BufferState.DRAINING_TO_SDRAM:
+                raise AssertionError(f"cannot drain buffer {item.buffer} from {buffer.state}")
         _first, latency = backend.service(state, item.request, metrics)
         max_latency = max(max_latency, latency + max(0, start - item.request.cycle))
         if item.klass == "video":
             video_lines_seen.add(item.line)
-            completed_line_parts[item.line] = completed_line_parts.get(item.line, 0) + 1
-            if completed_line_parts[item.line] == expected_parts:
+            buffer = buffers[item.buffer]
+            buffer.completed_parts += 1
+            if buffer.completed_parts == buffer.total_parts:
                 slack = item.deadline - state.time
                 min_video_slack = min(min_video_slack, slack)
+                worst_video_drain_latency = max(worst_video_drain_latency, state.time - buffer.drain_start)
                 if slack < 0:
                     video_misses += 1
+                buffer.state = BufferState.FREE
+                buffer.line = -1
+                buffer.completed_parts = 0
+                buffer.total_parts = 0
+                buffer.drain_start = -1
         elif item.klass == "audio":
             audio_chunks += 1
             slack = item.deadline - state.time
@@ -488,12 +605,17 @@ def run_machine_capture(
         backend=backend.name,
         freq_mhz=backend.freq_mhz,
         background_kind=background_kind,
+        raster_mode=raster.mode,
+        line_packet_words=line_packet_words,
         background_target_mb_s=background_target_mb_s,
         background_done_bytes=background_done_bytes,
         total_cycles=state.time,
         video_lines=len(video_lines_seen),
         video_misses=video_misses,
+        buffer_conflicts=buffer_conflicts,
         min_video_slack=0 if min_video_slack == 1 << 60 else min_video_slack,
+        worst_video_drain_latency=worst_video_drain_latency,
+        line_requests=line_requests,
         audio_chunks=audio_chunks,
         audio_misses=audio_misses,
         min_audio_slack=0 if min_audio_slack == 1 << 60 else min_audio_slack,
@@ -527,34 +649,37 @@ def run_machine_sweep(
     freq_mode: str,
     background_kinds: list[str],
     line_buffers: int,
-    line_packet_words: int,
+    line_packet_words_list: list[int],
     frames: int,
     lines: int | None,
     max_background_mb_s: int,
+    raster_mode: str,
+    raster_total_lines: int,
 ) -> list[MachineResult]:
     rows: list[MachineResult] = []
     for backend in machine_backends(freq_mode):
         for kind in background_kinds:
-            last_passing: MachineResult | None = None
-            low = 0
-            high = max_background_mb_s
-            while low <= high:
-                target = ((low + high) // 20) * 10
-                if target < low:
-                    target = low
-                if target > high:
-                    target = high
-                result = run_machine_capture(
-                    backend, kind, float(target), line_buffers,
-                    line_packet_words, frames, lines,
-                )
-                if result.video_misses or result.audio_misses:
-                    high = target - 10
-                else:
-                    last_passing = result
-                    low = target + 10
-            if last_passing is not None:
-                rows.append(last_passing)
+            for packet_words in line_packet_words_list:
+                last_passing: MachineResult | None = None
+                low = 0
+                high = max_background_mb_s
+                while low <= high:
+                    target = ((low + high) // 20) * 10
+                    if target < low:
+                        target = low
+                    if target > high:
+                        target = high
+                    result = run_machine_capture(
+                        backend, kind, float(target), line_buffers,
+                        packet_words, frames, lines, raster_mode, raster_total_lines,
+                    )
+                    if result.video_misses or result.audio_misses:
+                        high = target - 10
+                    else:
+                        last_passing = result
+                        low = target + 10
+                if last_passing is not None:
+                    rows.append(last_passing)
     return rows
 
 
@@ -685,9 +810,11 @@ def print_summary(rows: list[Metrics]) -> None:
 
 def print_machine_summary(rows: list[MachineResult]) -> None:
     header = (
-        "workload", "backend", "freq", "background", "target_MB/s",
+        "workload", "backend", "freq", "raster", "packet_words",
+        "background", "target_MB/s",
         "sustained_bg_MB/s", "cycles", "video_lines", "video_miss",
-        "min_video_slack", "audio_chunks", "audio_miss", "min_audio_slack",
+        "buffer_conflicts", "min_video_slack", "worst_video_drain",
+        "line_requests", "audio_chunks", "audio_miss", "min_audio_slack",
         "max_queued_lines", "max_latency", "ACT", "PRE", "RD", "WR", "REF",
         "hits", "conflicts", "dirchg"
     )
@@ -697,13 +824,18 @@ def print_machine_summary(rows: list[MachineResult]) -> None:
             row.workload,
             row.backend,
             f"{row.freq_mhz:.1f}",
+            row.raster_mode,
+            str(row.line_packet_words),
             row.background_kind,
             f"{row.background_target_mb_s:.1f}",
             f"{row.background_mb_s:.2f}",
             str(row.total_cycles),
             str(row.video_lines),
             str(row.video_misses),
+            str(row.buffer_conflicts),
             str(row.min_video_slack),
+            str(row.worst_video_drain_latency),
+            str(row.line_requests),
             str(row.audio_chunks),
             str(row.audio_misses),
             str(row.min_audio_slack),
@@ -748,10 +880,12 @@ def main() -> None:
     parser.add_argument("--trace-dir", type=Path)
     parser.add_argument("--machine-capture", action="store_true")
     parser.add_argument("--line-buffers", type=int, default=2)
-    parser.add_argument("--line-packet-words", type=int, default=128)
+    parser.add_argument("--line-packet-words", type=int, action="append")
     parser.add_argument("--frames", type=int, default=1)
     parser.add_argument("--lines", type=int)
     parser.add_argument("--max-background-mb-s", type=int, default=250)
+    parser.add_argument("--raster-mode", choices=["logical", "blanked"], default="logical")
+    parser.add_argument("--raster-total-lines", type=int, default=SOURCE_LINES)
     parser.add_argument("--background-kind", action="append", choices=[
         "seq_r", "seq_w", "mixed_seq", "rand_r", "rand_w", "mixed_rand",
         "poor_row", "good_row", "bank_conflict", "rw_thrash",
@@ -768,10 +902,12 @@ def main() -> None:
             args.clock_mode,
             background_kinds,
             args.line_buffers,
-            args.line_packet_words,
+            args.line_packet_words or [8, 16, 32, 64, 128, 256, 640, 1280],
             args.frames,
             args.lines,
             args.max_background_mb_s,
+            args.raster_mode,
+            args.raster_total_lines,
         )
         print_machine_summary(rows)
         if args.csv:
