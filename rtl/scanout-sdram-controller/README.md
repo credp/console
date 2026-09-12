@@ -73,6 +73,15 @@ Implemented and independently testable:
   staggered refresh-age accounting from a defined zero point. Pin ownership is
   multiplexed between the initialization sequencer and runtime core; the
   board-specific registered DQ capture boundary remains external.
+- an incremental two-client transaction layer. Each client independently owns
+  one admitted request, a complete write staging buffer, a splitter, tagged
+  completion state, and a reserved atomic read-response slot. Round-robin
+  arbitration occurs only between physical BL8 operations. A stalled reader
+  cannot retain the runtime core's response holder or prevent the peer and
+  refresh machinery from progressing. The directed pin-model test interleaves
+  two boundary-splitting writes and reads, checks exact per-client ordering and
+  accounting, and demonstrates peer completion while the other read stream is
+  deliberately stalled.
 
 Run `make test` for directed tests, `make lint` for Verilator lint, and
 `make formal` for SymbiYosys proofs of open-row command legality, bounded BL8
@@ -90,7 +99,9 @@ physical burst engine to provide a bounded operation duration. The new BL8
 engine and open-row core establish that local bound, and the deadline generator
 uses it as an explicit contract. Their runtime composition is tested under
 sustained traffic. The composed wrapper provides the first directly usable,
-initialization-aware request interface; multi-client queuing and scheduling must be added
+initialization-aware request interface. The first two-client transaction and
+response-reservation layer is independently tested; deeper multi-entry queues,
+priority policy, and integration with initialization must be added
 and verified before creating a successor hardware experiment. The production
 board-facing DQ PHY, asynchronous CDC FIFOs, complete multi-client queues,
 counters, and full-frame acceptance harness also remain integration work. The

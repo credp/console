@@ -4,7 +4,7 @@ CAD_SUITE ?= /home/chris/Projects/oss-cad-suite
 RTL := $(wildcard rtl/*.sv)
 
 .PHONY: test lint formal clean
-test: build/tb_foundation.vvp build/tb_bank_timing.vvp build/tb_dq_turnaround.vvp build/tb_refresh_deadline.vvp build/tb_open_row_scheduler.vvp build/tb_bl8_phy_engine.vvp build/tb_open_row_core.vvp build/tb_runtime_core.vvp build/tb_single_client_adapter.vvp build/tb_single_client_controller.vvp build/tb_pin_bist.vvp build/tb_pin_bl8_bist.vvp build/tb_pin_end_to_end.vvp
+test: build/tb_foundation.vvp build/tb_bank_timing.vvp build/tb_dq_turnaround.vvp build/tb_refresh_deadline.vvp build/tb_open_row_scheduler.vvp build/tb_bl8_phy_engine.vvp build/tb_open_row_core.vvp build/tb_runtime_core.vvp build/tb_single_client_adapter.vvp build/tb_two_client_adapter.vvp build/tb_single_client_controller.vvp build/tb_pin_bist.vvp build/tb_pin_bl8_bist.vvp build/tb_pin_end_to_end.vvp
 	$(VVP) build/tb_foundation.vvp
 	$(VVP) build/tb_bank_timing.vvp
 	$(VVP) build/tb_dq_turnaround.vvp
@@ -14,6 +14,7 @@ test: build/tb_foundation.vvp build/tb_bank_timing.vvp build/tb_dq_turnaround.vv
 	$(VVP) build/tb_open_row_core.vvp
 	$(VVP) build/tb_runtime_core.vvp
 	$(VVP) build/tb_single_client_adapter.vvp
+	$(VVP) build/tb_two_client_adapter.vvp
 	$(VVP) build/tb_single_client_controller.vvp
 	$(VVP) build/tb_pin_bist.vvp
 	$(VVP) build/tb_pin_bl8_bist.vvp
@@ -59,6 +60,10 @@ build/tb_single_client_controller.vvp: rtl/sdram_init_refresh.sv rtl/sdram_addr_
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_single_client_controller -o $@ $^
 
+build/tb_two_client_adapter.vvp: rtl/sdram_addr_decode.sv rtl/sdram_request_splitter.sv rtl/sdram_single_client_adapter.sv rtl/sdram_two_client_adapter.sv rtl/sdram_bank_timing.sv rtl/sdram_dq_turnaround.sv rtl/sdram_open_row_scheduler.sv rtl/sdram_bl8_phy_engine.sv rtl/sdram_open_row_core.sv rtl/sdram_refresh_deadline.sv rtl/sdram_runtime_core.sv tb/pin-model/sdram_pair_model.sv tb/tb_two_client_adapter.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_two_client_adapter -o $@ $^
+
 build/tb_pin_bist.vvp: rtl/sdram_rw_bist.sv tb/pin-model/sdram_pair_model.sv tb/tb_pin_bist.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_pin_bist -o $@ $^
@@ -79,6 +84,7 @@ formal:
 	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/bl8_phy_engine.sby
 	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/refresh_deadline.sby
 	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/single_client_adapter.sby
+	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/two_client_adapter.sby
 	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/bl8_op_engine.sby
 	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/splitter.sby
 	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/arbiter.sby
@@ -93,4 +99,5 @@ clean:
 		formal/refresh_deadline formal/refresh_deadline_prove formal/refresh_deadline_cover \
 		formal/runtime_core formal/runtime_core_prove formal/runtime_core_cover \
 		formal/single_client_adapter formal/single_client_adapter_prove formal/single_client_adapter_cover \
+		formal/two_client_adapter formal/two_client_adapter_prove formal/two_client_adapter_cover \
 		formal/open_row_scheduler formal/open_row_scheduler_prove formal/open_row_scheduler_cover
