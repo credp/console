@@ -1,21 +1,55 @@
 # SDRAM backend benchmark
 
-This directory contains the first executable slice of the three-way SDRAM
-backend comparison.
+This directory contains benchmark tooling for the three-way SDRAM backend
+comparison.  It is intentionally separate from production RTL.
 
-It is intentionally separate from production RTL.  The current runner is a
-deterministic command-level model that exercises shared workload traces against
-three contender policies:
+The primary artifact is now a deterministic logical request trace.  The trace
+describes what the machine asks memory to do and when.  It does not predict
+SDRAM commands, row hits, arbitration, completion latency, or controller
+efficiency; those belong to RTL simulation and result collection.
+
+Generate a machine-capture trace:
+
+```bash
+python3 tools/sdram-backend-bench/generate_trace.py \
+  --output /tmp/machine-capture.csv \
+  --frames 1 \
+  --line-packet-words 1280 \
+  --background-kind mixed_sequential \
+  --background-mb-s 40
+```
+
+Validate an archived trace:
+
+```bash
+python3 tools/sdram-backend-bench/generate_trace.py \
+  --validate-only /tmp/machine-capture.csv
+```
+
+Trace files use this CSV schema:
+
+```text
+issue_time_ns,client_id,op,address,length_words,byte_enable,tag,deadline_ns,traffic_class
+```
+
+`issue_time_ns` is a controller-independent integer nanosecond timebase.
+`deadline_ns` is `-1` when the request has no deadline.  Video capture requests
+use the line-buffer reuse deadline; audio capture requests use the next audio
+chunk deadline; background requests have no deadline.  HDMI presentation is
+not represented because normal scanout/resampling is BRAM traffic.
+
+The older `run_bench.py` command-level runner remains available as a
+synthetic/model-only smoke tool.  It exercises shared workload traces against
+three placeholder policies:
 
 - `stock_simple`: simple auto-precharge physical controller style;
 - `request_simple`: same simple backend with request-layer overhead;
 - `custom_current`: current open-row/custom-backend policy model.
 
-This is not a replacement for RTL simulation or Quartus fitting.  Its job is to
-make the trace format, workload families, and result tables concrete before the
-same traces are bound to RTL wrappers.
+It is not a replacement for RTL simulation or Quartus fitting, and its results
+should not be used for architectural conclusions.
 
-Run:
+Run the synthetic model:
 
 ```bash
 python3 tools/sdram-backend-bench/run_bench.py
@@ -27,7 +61,7 @@ Optional:
 python3 tools/sdram-backend-bench/run_bench.py --csv /tmp/sdram-bench.csv
 ```
 
-Dump deterministic workload traces for RTL/testbench consumption:
+Dump legacy synthetic workload traces for RTL/testbench experiments:
 
 ```bash
 python3 tools/sdram-backend-bench/run_bench.py --dump-traces /tmp/sdram-traces
@@ -39,7 +73,7 @@ Run the command-level models from previously dumped traces:
 python3 tools/sdram-backend-bench/run_bench.py --trace-dir /tmp/sdram-traces
 ```
 
-Run the real-machine capture topology sweep:
+Run the legacy synthetic real-machine capture topology sweep:
 
 ```bash
 python3 tools/sdram-backend-bench/run_bench.py \
@@ -51,9 +85,8 @@ python3 tools/sdram-backend-bench/run_bench.py \
 ```
 
 This mode models one 2560-byte video capture line arriving every source-line
-period, chunked audio capture, and increasing background traffic.  It does not
-model HDMI presentation as SDRAM reads; HDMI line repetition/resampling is local
-BRAM traffic.
+period, chunked audio capture, and increasing background traffic through a
+command-level policy model.  Treat its output as synthetic only.
 
 Use `--frames 1` without `--lines` for a full 720-line frame sweep.  Full-frame
 high-load sweeps are intentionally heavier than the smoke command above.
@@ -77,8 +110,8 @@ python3 tools/sdram-backend-bench/trace_to_mem.py \
   /tmp/boundary_cases.mem
 ```
 
-Trace files use the common CSV format documented in
-`docs/sdram-backend-comparison-plan.md`:
+Legacy `run_bench.py --dump-traces` files use the older CSV format documented
+by that script:
 
 ```text
 cycle,client,op,address,words,byte_enable,tag

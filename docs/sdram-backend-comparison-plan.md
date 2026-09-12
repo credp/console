@@ -64,6 +64,7 @@ The benchmark infrastructure is intentionally outside production RTL:
 ```text
 tools/sdram-backend-bench/
     README.md
+    generate_trace.py
     run_bench.py
     traces/
         generated deterministic workload traces
@@ -78,30 +79,44 @@ third_party/
     future vendored permissive controller copies with license text
 ```
 
-The first committed executable slice is a deterministic command-level benchmark
-model.  It establishes workload definitions, trace format, and output metrics.
-It is not a substitute for RTL simulation or Quartus fitting.  The next slice
-should bind the same traces to RTL wrappers and then to Quartus harnesses.
+The primary benchmark artifact is a deterministic logical request trace.  It
+establishes workload demand only.  The existing command-level model is retained
+as a synthetic smoke tool while RTL wrappers are being built; it is not a
+source of architectural performance evidence.
 
 ## Common Trace Format
 
 CSV, one logical request per row:
 
 ```text
-cycle,client,op,address,words,byte_enable,tag
+issue_time_ns,client_id,op,address,length_words,byte_enable,tag,deadline_ns,traffic_class
 ```
 
-- `cycle`: earliest cycle the request may be offered.
-- `client`: client number, initially `0` or `1`.
+- `issue_time_ns`: earliest controller-independent time the request may be
+  offered, in integer nanoseconds.
+- `client_id`: logical client number, initially `0` for capture traffic and
+  `1` for arbitrary background traffic.
 - `op`: `R` or `W`.
 - `address`: byte address, decimal or `0x` hex, 16-bit aligned.
-- `words`: number of 16-bit words.
+- `length_words`: number of 16-bit words.
 - `byte_enable`: two-bit write mask in hex; reads use `3`.
-- `tag`: opaque request tag.
+- `tag`: opaque request tag, unique within the trace.
+- `deadline_ns`: hard completion deadline in integer nanoseconds, or `-1` when
+  the request has no deadline.
+- `traffic_class`: inspectable label such as `video`, `audio`, or
+  `background:mixed_random`.
+
+The trace must not include SDRAM/backend-derived fields such as ACTIVATE,
+PRECHARGE, row-hit classification, predicted latency, predicted completion
+time, controller busy time, or arbitration decisions.  Those are measured from
+RTL and result instrumentation.
 
 The shared logical interface is high enough to express the traffic we care
 about, but the benchmark must not accidentally implement most of the custom
-controller in front of the simple-stock contender.
+controller in front of the simple-stock contender.  A replay driver may queue
+requests that have reached `issue_time_ns` until the controller's real
+handshake accepts them, but it must record that queueing rather than silently
+moving request arrival times.
 
 ## Adapter Boundaries
 
@@ -205,10 +220,10 @@ For the baseline 1280x720 16-bit source format:
 - source-line period: about 23.15 us.
 
 The important property is the deadline shape, not the average bandwidth: one
-completed 2560-byte line arrives about every 23.15 us and must be drained before
-the corresponding BRAM line buffer is needed again.  The benchmark therefore
-models periodic deadline traffic with gaps, not a uniform permanent 110 MB/s
-stream.
+completed 2560-byte line arrives about every 23.15 us and must be captured
+before the corresponding BRAM line buffer is needed again.  The logical trace
+therefore emits periodic line-write demand with deadlines, not a uniform
+permanent 110 MB/s stream.
 
 The minimum topology is two line buffers:
 
@@ -217,26 +232,14 @@ line A: currently being populated by the source raster
 line B: previous completed line being presented locally and drained to SDRAM
 ```
 
-Additional line-buffer elasticity is a stress parameter, not an assumed
-requirement.  The command-level benchmark currently accepts `--line-buffers 2`,
-`3`, or `4` and reports missed deadlines plus minimum slack.
-
-The model now represents each BRAM line buffer explicitly.  A buffer moves
-through these states:
-
-```text
-FREE -> FILLING -> COMPLETE_AVAILABLE -> DRAINING_TO_SDRAM -> FREE
-```
-
-At each source-line completion, the just-filled buffer becomes
-`COMPLETE_AVAILABLE` and its SDRAM drain requests are enqueued exactly once.
-The next ping-pong buffer must be `FREE` before it can become `FILLING`.  If it
-is still `COMPLETE_AVAILABLE` or `DRAINING_TO_SDRAM`, the benchmark records a
-hard video buffer conflict.  This is the real failure condition: the raster
-producer cannot swap into a buffer still owned by capture.
-
-The command-level model asserts impossible ownership transitions, such as
-draining a buffer that is neither complete nor already draining.
+The trace generator does not run a generalized line-buffer simulator.  For the
+minimum two-buffer ping-pong topology, it represents the ownership requirement
+as deadlines: a line capture request becomes available when the source line is
+complete and must complete before that buffer would be reused.  With the
+default `--line-buffers 2`, line `N` uses deadline `line_time(N + 2)`.
+Additional line-buffer elasticity is represented by increasing the deadline
+offset; the RTL result collector is responsible for reporting actual deadline
+misses and slack.
 
 Raster timing is also explicit:
 
@@ -248,8 +251,8 @@ Raster timing is also explicit:
   active region as vertical blanking.  This lets later sweeps test whether
   blanking materially changes SDRAM availability.
 
-Audio capture is modelled as chunked FIFO-like writes.  The baseline is 48 kHz,
-stereo, 16-bit samples, or 192,000 bytes/sec.  The current command-level model
+Audio capture is generated as chunked FIFO-like writes.  The baseline is 48
+kHz, stereo, 16-bit samples, or 192,000 bytes/sec.  The default logical trace
 uses 256-byte audio chunks with one chunk deadline period.
 
 The primary machine-level question is:
@@ -259,18 +262,18 @@ with video and audio capture deadlines met perfectly,
 how much useful background SDRAM bandwidth remains?
 ```
 
-The benchmark sweeps offered background traffic until video deadline miss,
-audio deadline miss, or backend saturation.  Background variants include
-sequential reads, sequential writes, mixed sequential traffic, random reads,
-random writes, mixed random traffic, poor locality, good locality,
-bank-conflict-heavy traffic, and read/write direction thrashing.
+The trace generator can emit background traffic at a configured offered load.
+Background variants include sequential reads, sequential writes, mixed
+sequential traffic, random reads, random writes, mixed random traffic, poor
+locality, good locality, same-bank-conflict-style addressing, and read/write
+direction thrashing.  Random variants are deterministic from an explicit seed.
+Finding the maximum sustainable load is an RTL replay/result-collection task.
 
-The line-drain packet size is a first-class sweep dimension.  A 2560-byte line
-may be drained as one large transaction, several medium transactions, BL8-sized
-chunks, or another implementation-natural size.  The standard command-level
-sweep includes 8, 16, 32, 64, 128, 256, 640, and 1280 16-bit words.  This is
-necessary because the simple high-Fmax controller may prefer larger sequential
-chunks, while the custom backend may be less sensitive to packetization.
+The line-drain packet size is a first-class trace-generation parameter.  A
+2560-byte line may be requested as one large logical transaction or several
+smaller logical transactions.  This is application request packetization only;
+the generator does not emulate internal SDRAM burst splitting.  Useful sweep
+points include 8, 16, 32, 64, 128, 256, 640, and 1280 16-bit words.
 
 ## Metrics
 
@@ -311,24 +314,15 @@ throughput on this FPGA.
 
 - The simple stock contender is naturally single-port.  Two-client contention
   is driven through the smallest reasonable arbiter/shim and reported as such.
-- The command-level model used by the first executable slice is a planning and
-  trace-validation tool.  It does not replace RTL simulation or Quartus reports.
-- The machine-capture model currently uses a strict priority order of video,
-  then audio, then background when all are pending.  That is a deliberate
-  deadline-safety assumption for the first command-level sweep and must be
-  revisited when real RTL arbiters are compared.
-- The command-level machine sweep reports only the last passing background
-  load point.  If a backend has no passing point, it is omitted from that
-  particular summary.  In practice this can happen when the baseline video
-  capture workload already misses its deadlines under the selected clock,
-  buffering, or line-packetization.
-- Short `--lines` sweeps are smoke tests.  Full-frame sweeps should still be
-  run before drawing architectural conclusions, especially for refresh-phase
-  and long-tail latency behaviour.
-- Current address mapping assumes the existing `stripe-1k-bank-chip` mapping
-  used by the custom controller unless a workload explicitly says otherwise.
-- Refresh modelling begins as periodic all-bank service time.  RTL wrappers
-  should later count real refresh commands and stalls.
+- The trace generator describes demand only.  It does not choose arbitration
+  order, schedule SDRAM commands, classify row hits, or model refresh.
+- The command-level model is synthetic/model-only and should not be used for
+  final performance conclusions.
+- Short generated traces are smoke tests.  Full-frame traces should still be
+  replayed before drawing architectural conclusions, especially for refresh
+  phase and long-tail latency behaviour.
+- Background locality labels are address-pattern hints, not row-hit claims.
+  RTL instrumentation must measure the actual SDRAM behaviour.
 - The GPL MiSTer controller remains reference-only and is not copied here.
 
 ## Review Gates
