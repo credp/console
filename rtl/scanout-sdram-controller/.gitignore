@@ -7,3 +7,6 @@ formal/splitter/
 formal/bl8_op_engine_prove/
 formal/bl8_op_engine_cover/
 formal/bl8_op_engine/
+formal/open_row_scheduler_prove/
+formal/open_row_scheduler_cover/
+formal/open_row_scheduler/

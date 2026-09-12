@@ -1,0 +1,21 @@
+[tasks]
+prove
+cover
+
+[options]
+prove: mode prove
+prove: depth 16
+cover: mode cover
+cover: depth 80
+
+[engines]
+smtbmc boolector
+
+[script]
+read -formal -sv sdram_bank_timing.sv sdram_open_row_scheduler.sv open_row_scheduler_formal.sv
+prep -top open_row_scheduler_formal
+
+[files]
+rtl/sdram_bank_timing.sv
+rtl/sdram_open_row_scheduler.sv
+formal/open_row_scheduler_formal.sv

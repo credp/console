@@ -16,15 +16,25 @@ Implemented and independently testable:
 - a 4,096-cycle capture flush guard and mutually-exclusive presentation mode control;
 - inferred on-chip block-RAM FIFOs: 2,048-word video capture, 2,048-word replay,
   512-word audio playback, and 256-word audio write staging. Write queues store
-  two byte-mask bits with each 16-bit word.
+  two byte-mask bits with each 16-bit word;
+- an additive, single-operation open-row scheduler and timing tracker. The
+  tracker records the open row, read/write burst ownership, and command ages
+  for all eight physical banks. It qualifies ACTIVATE, PRECHARGE, READ, WRITE,
+  PRECHARGE ALL, and AUTO REFRESH against tRCD, tRP, tRAS, tRC, tRRD, tWR, and
+  tRFC. The scheduler resolves closed-bank, row-hit, and row-conflict cases and
+  holds a proposed command stable under command-bus backpressure.
 
 Run `make test` for directed tests, `make lint` for Verilator lint, and
-`make formal` for SymbiYosys proofs of splitter physical bounds, strict arbiter
+`make formal` for SymbiYosys proofs of open-row command legality, splitter physical bounds, strict arbiter
 priority and grant stability, frame ownership/publication (including simultaneous
 publish/replay), FIFO ordering/conservation, and refresh-command deadlines for
 both open- and closed-bank cases.
 
-The production board-facing DQ PHY, asynchronous CDC FIFOs, complete multi-client queues,
-bank timing engine, counters, and full-frame acceptance harness remain integration
-work. The modules here deliberately expose clean boundaries for those pieces; this
-is not yet a complete presentation controller and no 122 MB/s claim applies to it.
+The new scheduler is deliberately not connected to the hardware-qualified 006.b
+experiment or its conservative BL8 engine. Runtime refresh arbitration, DQ
+turnaround, data-beat integration, and multi-operation scheduling must be added
+and verified before creating a successor hardware experiment. The production
+board-facing DQ PHY, asynchronous CDC FIFOs, complete multi-client queues,
+counters, and full-frame acceptance harness also remain integration work. The
+modules here deliberately expose clean boundaries for those pieces; this is not
+yet a complete presentation controller and no 122 MB/s claim applies to it.
