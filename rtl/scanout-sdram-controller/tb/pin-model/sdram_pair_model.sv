@@ -28,6 +28,12 @@ module sdram_pair_model #(
   endcase
  endfunction
 
+ // Sequential BL8 wraps within the aligned eight-column group, including
+ // masked padding beats following an unaligned partial write.
+ function automatic [9:0] next_column(input logic [9:0] col,input logic [3:0] length);
+  next_column=(length==8)?{col[9:3],col[2:0]+3'd1}:col;
+ endfunction
+
  initial begin
   dq_oe=0;rd_latency=0;rd_beats=0;wr_beats=0;
   for(c=0;c<2;c=c+1)begin
@@ -44,13 +50,13 @@ module sdram_pair_model #(
    rd_latency<=0;
    dq_out<=mem[rd_chip][rd_bank][rd_row][rd_col];
    dq_oe<=1;
-   rd_col<=rd_col+1'b1;
+   rd_col<=next_column(rd_col,burst_length[rd_chip]);
    rd_beats<=rd_beats-1;
    if(rd_beats==1&&rd_autoprecharge)open_valid[rd_chip][rd_bank]<=0;
   end else if(rd_beats>0)begin
    dq_out<=mem[rd_chip][rd_bank][rd_row][rd_col];
    dq_oe<=1;
-   rd_col<=rd_col+1'b1;
+   rd_col<=next_column(rd_col,burst_length[rd_chip]);
    rd_beats<=rd_beats-1;
    if(rd_beats==1&&rd_autoprecharge)open_valid[rd_chip][rd_bank]<=0;
   end
@@ -58,7 +64,7 @@ module sdram_pair_model #(
   if(wr_beats>0)begin
    if(!dqml)mem[wr_chip][wr_bank][wr_row][wr_col][7:0]<=dq[7:0];
    if(!dqmh)mem[wr_chip][wr_bank][wr_row][wr_col][15:8]<=dq[15:8];
-   wr_col<=wr_col+1'b1;
+   wr_col<=next_column(wr_col,burst_length[wr_chip]);
    wr_beats<=wr_beats-1;
    if(wr_beats==1&&wr_autoprecharge)open_valid[wr_chip][wr_bank]<=0;
   end
@@ -75,7 +81,7 @@ module sdram_pair_model #(
    3'b100:if(open_valid[ncs][ba])begin
     if(!dqml)mem[ncs][ba][open_row[ncs][ba][4:0]][a[9:0]][7:0]<=dq[7:0];
     if(!dqmh)mem[ncs][ba][open_row[ncs][ba][4:0]][a[9:0]][15:8]<=dq[15:8];
-    wr_chip<=ncs;wr_bank<=ba;wr_row<=open_row[ncs][ba][4:0];wr_col<=a[9:0]+1'b1;
+    wr_chip<=ncs;wr_bank<=ba;wr_row<=open_row[ncs][ba][4:0];wr_col<=next_column(a[9:0],burst_length[ncs]);
     wr_beats<=burst_length[ncs]-1'b1;wr_autoprecharge<=a[10];
     if(burst_length[ncs]==1&&a[10])open_valid[ncs][ba]<=0;
    end

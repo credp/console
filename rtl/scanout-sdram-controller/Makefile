@@ -30,6 +30,7 @@ lint:
 	verilator --lint-only -Wall -Wno-fatal --top-module sdram_request_splitter $(RTL)
 
 formal:
+	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/bl8_op_engine.sby
 	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/splitter.sby
 	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/arbiter.sby
 	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/fifo.sby

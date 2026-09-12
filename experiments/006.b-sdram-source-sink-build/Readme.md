@@ -1,25 +1,19 @@
 # SDRAM BL8 source/sink experiment
 
-Generated from Template_MiSTer revision 14d9ed0. The 20 MHz template PLL drives
-both the controller and `SDRAM_CLK`. After datasheet-style initialization the
-self-test programs sequential BL8 with CAS latency 3. Logical byte addresses
-are passed through the production `stripe-1k-bank-chip` decoder. Across the
-first sixteen 1 KiB stripes it exercises both chips, all four banks, both halves
-of a physical row, and bursts at the start, middle, and end of every stripe. Each case
-writes address-and-beat-derived data during a complete write pass. DQM modes
-then perform a separate masked-overwrite pass. The controller waits 1 ms after
-all writes have finished before beginning a distinct address-derived read and
-verification pass; expected data is regenerated from the physical test address
-and is not retained from the write transaction. Hardware capture probing
-established that the correct registered read position is CL+0. This is the
-first production-data-path milestone; request splitting, bank scheduling,
-traffic-time refresh, FIFOs, and tagged completion are still to follow.
+Generated from Template_MiSTer revision 14d9ed0. The hardware baseline remains
+20 MHz, with packed rising-edge I/O registers and an inverted forwarded clock.
+After initialization the engine uses sequential BL8 and CAS latency 3. Hardware
+capture probing established the current CL+0 registered return position at
+20 MHz; increasing the clock still requires qualifying the PHY/beat alignment.
 
-`LED_USER` is solid on after all 192 comparisons pass, flashing after any
-failure, and off while the test runs. The reusable diagnostic also retains a
-saturating error count and the address, beat, expected value, observed value,
-and state of the first failure. These fields are not yet exported by this
-experiment's LED-only frontend.
+The client performs a complete address-derived write pass, an optional masked
+overwrite pass, a 1 ms dwell, then a separate read pass. `LED_USER` is solid only
+after exactly 58 logical words have been checked, the comparison pipeline has
+drained, and both data and operation-accounting checks pass. It flashes on a
+completed failed test and remains off while the test runs. The BIST exposes a
+saturating data-error count and first failing logical address/expected/observed
+values; these fields are not yet exported by the LED-only frontend. A stalled
+test has no hardware watchdog yet.
 
 The `SDRAM test` option selects the unmasked BL8 baseline, alternating low and
 high byte overwrites, low-byte-only overwrites, or high-byte-only overwrites.
@@ -34,12 +28,46 @@ address and performs the physical command and data sequence. The requests cross
 an unaligned BL8 boundary (1+8+1 words), a chip stripe, a bank stripe, the 1 KiB
 half-row transition, and a 2 KiB physical-row transition (4+8 words each).
 Partial writes mask unused physical beats and partial reads discard them. The
-BIST reconstructs and verifies the resulting 58-word logical response stream
-in request order after the separate write and persistence phases.
+BIST verifies the resulting 58-word logical response stream in request order.
+Expected values and write payloads use an independent logical cursor, and every
+emitted address, length, last marker, and completion count is checked against
+that cursor. They are not derived from the splitter's emitted address.
+
+The engine captures all eight physical read beats into a private burst buffer
+before presenting useful words with `read_valid/read_ready`. It holds data and
+valid under backpressure and completes only after the last useful word is
+accepted. There is one outstanding operation, so buffer capacity is reserved
+implicitly. Comparison and diagnostic updates are separate pipeline stages.
+Startup, command waits, and BIST dwell use bounded counters rather than 64-bit
+runtime counters. At 142.857 MHz these require 15, 4, and 18 bits respectively.
+
+This is still the conservative auto-precharge engine. Open-bank scheduling,
+runtime refresh (including during dwell or indefinite client stalls), queued
+transactions, and tagged completion remain future steps. It is not a sustained
+traffic or long-retention test yet.
 
 The same pins are tested by `make test` in
 `../../rtl/scanout-sdram-controller` against a behavioral two-chip model. That
-test suite also retains the prior BL1 test as a regression.
+test suite also retains the prior BL1/BL8 tests as regressions. The integrated
+test runs the 20 MHz and 142.857 MHz cycle-count configurations, all four mask
+modes, random write/read stalls, first/final-word stalls, and reset while a read
+is buffered. It checks untouched guard words around partial bursts, exclusive
+DQ ownership, and non-X/Z useful captures. Corrupting the last response and
+dropping a response must both fail. The model implements BL8 column wrapping;
+its legacy `READ_LATENCY_EDGES=2` override is a functional convention, not proof
+of analogue timing or high-frequency capture alignment.
+
+`make formal` includes an inductive proof of burst capture/delivery conservation,
+arbitrary watched-word preservation, stable stalled responses, and completion
+only after all useful words are accepted. This is not yet a proof of all SDRAM
+command timing rules.
+
+After fitting, run `quartus_sta -t report_sdram_timing.tcl` here to produce
+separate input, capture-to-buffer, output, and internal setup/hold reports in
+`output_files/`. The baseline SDC uses PLL output 0 and fails explicitly if that
+clock source is missing. It has no extra-cycle input exception at 20 MHz.
+Reports use the default slow corner; full operating-corner qualification and
+board-delay validation remain necessary before high-speed sign-off.
 
 ## Upstream template documentation
 

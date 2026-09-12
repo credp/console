@@ -4,3 +4,6 @@ formal/fifo/
 formal/frame_publish/
 formal/refresh/
 formal/splitter/
+formal/bl8_op_engine_prove/
+formal/bl8_op_engine_cover/
+formal/bl8_op_engine/

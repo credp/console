@@ -2,9 +2,13 @@ derive_pll_clocks
 derive_clock_uncertainty
 
 # core specific constraints
+set sdram_clock_source [get_pins {emu|pll|pll_inst|altera_pll_i|general[0].gpll~PLL_OUTPUT_COUNTER|divclk}]
+if {[get_collection_size $sdram_clock_source] != 1} {
+    error "Expected exactly one SDRAM PLL clock source"
+}
 create_generated_clock \
     -name sdram_clk_out \
-    -source emu|pll|pll_inst|altera_pll_i|general[1].gpll~PLL_OUTPUT_COUNTER|divclk \
+    -source $sdram_clock_source \
     -divide_by 1 \
     -invert \
     [get_ports {SDRAM_CLK}]
@@ -35,6 +39,5 @@ set_input_delay \
     -min 2.5 \
     [get_ports {SDRAM_DQ[*]}]
 
-set_multicycle_path 2 -setup \
-    -from [get_ports {SDRAM_DQ[*]}] \
-    -to [get_registers {*phy_sdram_dq_in*}]
+# At the 20 MHz baseline, capture is on the next controller rising edge,
+# 25 ns after the nominal inverted SDRAM edge. No extra-cycle exception.
