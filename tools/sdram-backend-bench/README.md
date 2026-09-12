@@ -39,6 +39,25 @@ Run the command-level models from previously dumped traces:
 python3 tools/sdram-backend-bench/run_bench.py --trace-dir /tmp/sdram-traces
 ```
 
+Run the real-machine capture topology sweep:
+
+```bash
+python3 tools/sdram-backend-bench/run_bench.py \
+  --machine-capture \
+  --clock-mode fmax \
+  --line-buffers 2 \
+  --line-packet-words 128 \
+  --lines 30
+```
+
+This mode models one 2560-byte video capture line arriving every source-line
+period, chunked audio capture, and increasing background traffic.  It does not
+model HDMI presentation as SDRAM reads; HDMI line repetition/resampling is local
+BRAM traffic.
+
+Use `--frames 1` without `--lines` for a full 720-line frame sweep.  Full-frame
+high-load sweeps are intentionally heavier than the smoke command above.
+
 Convert one trace to a `$readmemh`-friendly RTL fixture:
 
 ```bash

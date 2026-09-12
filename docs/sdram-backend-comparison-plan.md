@@ -174,6 +174,76 @@ scheduling look good, open-row scheduling look pointless, high clock rate
 compensate for simple policy, and scheduling cleverness compensate for lower
 clock rate.
 
+## Real Machine Capture Topology
+
+Do not model normal HDMI presentation as external SDRAM read traffic.
+
+The steady-state presentation path is:
+
+```text
+machine raster
+    -> BRAM line-buffer ping-pong
+    -> HDMI scanout / scaling / repetition
+```
+
+The HDMI side may read or resample the completed source line multiple times,
+but that is local BRAM traffic.  Repeated HDMI sampling must not become
+repeated SDRAM traffic in this benchmark.
+
+The independent capture path is:
+
+```text
+completed BRAM source line
+    -> one SDRAM capture drain
+```
+
+For the baseline 1280x720 16-bit source format:
+
+- source line size: 1280 pixels * 2 bytes = 2560 bytes;
+- source lines/sec: 720 * 60 = 43,200;
+- average capture bandwidth: 110.592 MB/s;
+- source-line period: about 23.15 us.
+
+The important property is the deadline shape, not the average bandwidth: one
+completed 2560-byte line arrives about every 23.15 us and must be drained before
+the corresponding BRAM line buffer is needed again.  The benchmark therefore
+models periodic deadline traffic with gaps, not a uniform permanent 110 MB/s
+stream.
+
+The minimum topology is two line buffers:
+
+```text
+line A: currently being populated by the source raster
+line B: previous completed line being presented locally and drained to SDRAM
+```
+
+Additional line-buffer elasticity is a stress parameter, not an assumed
+requirement.  The command-level benchmark currently accepts `--line-buffers 2`,
+`3`, or `4` and reports missed deadlines plus minimum slack.
+
+Audio capture is modelled as chunked FIFO-like writes.  The baseline is 48 kHz,
+stereo, 16-bit samples, or 192,000 bytes/sec.  The current command-level model
+uses 256-byte audio chunks with one chunk deadline period.
+
+The primary machine-level question is:
+
+```text
+with video and audio capture deadlines met perfectly,
+how much useful background SDRAM bandwidth remains?
+```
+
+The benchmark sweeps offered background traffic until video deadline miss,
+audio deadline miss, or backend saturation.  Background variants include
+sequential reads, sequential writes, mixed sequential traffic, random reads,
+random writes, mixed random traffic, poor locality, good locality,
+bank-conflict-heavy traffic, and read/write direction thrashing.
+
+The line-drain packet size is configurable.  A 2560-byte line may be drained as
+one large transaction, several medium transactions, BL8-sized chunks, or another
+implementation-natural size.  This is necessary because the simple high-Fmax
+controller may prefer larger sequential chunks, while the custom backend may be
+less sensitive to packetization.
+
 ## Metrics
 
 Collect these where available:
@@ -215,6 +285,18 @@ throughput on this FPGA.
   is driven through the smallest reasonable arbiter/shim and reported as such.
 - The command-level model used by the first executable slice is a planning and
   trace-validation tool.  It does not replace RTL simulation or Quartus reports.
+- The machine-capture model currently uses a strict priority order of video,
+  then audio, then background when all are pending.  That is a deliberate
+  deadline-safety assumption for the first command-level sweep and must be
+  revisited when real RTL arbiters are compared.
+- The command-level machine sweep reports only the last passing background
+  load point.  If a backend has no passing point, it is omitted from that
+  particular summary.  In practice this can happen when the baseline video
+  capture workload already misses its deadlines under the selected clock,
+  buffering, or line-packetization.
+- Short `--lines` sweeps are smoke tests.  Full-frame sweeps should still be
+  run before drawing architectural conclusions, especially for refresh-phase
+  and long-tail latency behaviour.
 - Current address mapping assumes the existing `stripe-1k-bank-chip` mapping
   used by the custom controller unless a workload explicitly says otherwise.
 - Refresh modelling begins as periodic all-bank service time.  RTL wrappers
