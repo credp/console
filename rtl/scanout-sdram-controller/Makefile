@@ -4,11 +4,12 @@ CAD_SUITE ?= /home/chris/Projects/oss-cad-suite
 RTL := $(wildcard rtl/*.sv)
 
 .PHONY: test lint formal clean
-test: build/tb_foundation.vvp build/tb_bank_timing.vvp build/tb_dq_turnaround.vvp build/tb_open_row_scheduler.vvp build/tb_pin_bist.vvp build/tb_pin_bl8_bist.vvp build/tb_pin_end_to_end.vvp
+test: build/tb_foundation.vvp build/tb_bank_timing.vvp build/tb_dq_turnaround.vvp build/tb_open_row_scheduler.vvp build/tb_bl8_phy_engine.vvp build/tb_pin_bist.vvp build/tb_pin_bl8_bist.vvp build/tb_pin_end_to_end.vvp
 	$(VVP) build/tb_foundation.vvp
 	$(VVP) build/tb_bank_timing.vvp
 	$(VVP) build/tb_dq_turnaround.vvp
 	$(VVP) build/tb_open_row_scheduler.vvp
+	$(VVP) build/tb_bl8_phy_engine.vvp
 	$(VVP) build/tb_pin_bist.vvp
 	$(VVP) build/tb_pin_bl8_bist.vvp
 	$(VVP) build/tb_pin_end_to_end.vvp
@@ -29,6 +30,10 @@ build/tb_dq_turnaround.vvp: rtl/sdram_dq_turnaround.sv tb/tb_dq_turnaround.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_dq_turnaround -o $@ $^
 
+build/tb_bl8_phy_engine.vvp: rtl/sdram_bl8_phy_engine.sv tb/pin-model/sdram_pair_model.sv tb/tb_bl8_phy_engine.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_bl8_phy_engine -o $@ $^
+
 build/tb_pin_bist.vvp: rtl/sdram_rw_bist.sv tb/pin-model/sdram_pair_model.sv tb/tb_pin_bist.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_pin_bist -o $@ $^
@@ -46,6 +51,7 @@ lint:
 
 formal:
 	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/open_row_scheduler.sby
+	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/bl8_phy_engine.sby
 	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/bl8_op_engine.sby
 	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/splitter.sby
 	PATH=$(CAD_SUITE)/bin:$$PATH $(CAD_SUITE)/bin/sby -f formal/arbiter.sby
@@ -55,5 +61,6 @@ formal:
 
 clean:
 	rm -rf build formal/splitter formal/arbiter formal/fifo formal/frame_publish formal/refresh \
-		formal/bl8_op_engine formal/bl8_op_engine_prove formal/bl8_op_engine_cover \
+	formal/bl8_op_engine formal/bl8_op_engine_prove formal/bl8_op_engine_cover \
+		formal/bl8_phy_engine formal/bl8_phy_engine_prove formal/bl8_phy_engine_cover \
 		formal/open_row_scheduler formal/open_row_scheduler_prove formal/open_row_scheduler_cover

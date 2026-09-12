@@ -31,9 +31,18 @@ Implemented and independently testable:
   before an opposite-direction column command. The current scheduler uses this
   conservative rule in both directions; a future PHY may safely recover some
   write-to-read command overlap from the configured CAS latency.
+- a bounded BL8 physical command engine. It translates accepted scheduler
+  commands to SDRAM pins, drives all eight write beats from an atomic 128-bit
+  payload, captures all eight read beats into an atomic payload, and pulses
+  `burst_done` on physical beat seven. Once a READ or WRITE command is accepted
+  it cannot be stretched by client backpressure; its bound is seven remaining
+  write clocks or `READ_CAPTURE_CYCLES + 8` read clocks. Initialization and the
+  board-specific input register/capture phase intentionally remain outside this
+  engine.
 
 Run `make test` for directed tests, `make lint` for Verilator lint, and
-`make formal` for SymbiYosys proofs of open-row command legality, splitter physical bounds, strict arbiter
+`make formal` for SymbiYosys proofs of open-row command legality, bounded BL8
+pin transactions, splitter physical bounds, strict arbiter
 priority and grant stability, frame ownership/publication (including simultaneous
 publish/replay), FIFO ordering/conservation, and refresh-command deadlines for
 both open- and closed-bank cases.
@@ -41,8 +50,9 @@ both open- and closed-bank cases.
 The new scheduler is deliberately not connected to the hardware-qualified 006.b
 experiment or its conservative BL8 engine. Its refresh request port is not yet
 a refresh deadline generator: bounding request-to-service latency requires the
-physical burst engine to provide a bounded operation duration. Physical
-data-beat integration, deadline generation, and multi-operation scheduling must be added
+physical burst engine to provide a bounded operation duration. The new BL8
+engine establishes that local bound, but scheduler/engine payload integration,
+deadline generation, and multi-operation scheduling must be added
 and verified before creating a successor hardware experiment. The production
 board-facing DQ PHY, asynchronous CDC FIFOs, complete multi-client queues,
 counters, and full-frame acceptance harness also remain integration work. The
