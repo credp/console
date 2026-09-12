@@ -73,6 +73,9 @@ Implemented and independently testable:
   staggered refresh-age accounting from a defined zero point. Pin ownership is
   multiplexed between the initialization sequencer and runtime core; the
   board-specific registered DQ capture boundary remains external.
+  The client-independent initialization and pin multiplexer is factored into
+  `sdram_initialized_runtime`, leaving the controller wrapper as a small
+  composition of the request adapter and atomic runtime boundary.
 - an incremental two-client transaction layer. Each client independently owns
   one admitted request, a complete write staging buffer, a splitter, tagged
   completion state, and a reserved atomic read-response slot. Round-robin

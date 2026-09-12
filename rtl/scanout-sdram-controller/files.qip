@@ -17,6 +17,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_bl8_phy_engine.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_open_row_core.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_refresh_deadline.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_runtime_core.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_initialized_runtime.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_single_client_adapter.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_two_client_adapter.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_single_client_controller.sv

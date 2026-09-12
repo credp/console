@@ -56,7 +56,7 @@ build/tb_single_client_adapter.vvp: rtl/sdram_addr_decode.sv rtl/sdram_request_s
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_single_client_adapter -o $@ $^
 
-build/tb_single_client_controller.vvp: rtl/sdram_init_refresh.sv rtl/sdram_addr_decode.sv rtl/sdram_request_splitter.sv rtl/sdram_single_client_adapter.sv rtl/sdram_bank_timing.sv rtl/sdram_dq_turnaround.sv rtl/sdram_open_row_scheduler.sv rtl/sdram_bl8_phy_engine.sv rtl/sdram_open_row_core.sv rtl/sdram_refresh_deadline.sv rtl/sdram_runtime_core.sv rtl/sdram_single_client_controller.sv tb/pin-model/sdram_pair_model.sv tb/tb_single_client_controller.sv
+build/tb_single_client_controller.vvp: rtl/sdram_init_refresh.sv rtl/sdram_addr_decode.sv rtl/sdram_request_splitter.sv rtl/sdram_single_client_adapter.sv rtl/sdram_bank_timing.sv rtl/sdram_dq_turnaround.sv rtl/sdram_open_row_scheduler.sv rtl/sdram_bl8_phy_engine.sv rtl/sdram_open_row_core.sv rtl/sdram_refresh_deadline.sv rtl/sdram_runtime_core.sv rtl/sdram_initialized_runtime.sv rtl/sdram_single_client_controller.sv tb/pin-model/sdram_pair_model.sv tb/tb_single_client_controller.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_single_client_controller -o $@ $^
 
