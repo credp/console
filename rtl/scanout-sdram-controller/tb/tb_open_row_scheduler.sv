@@ -6,8 +6,9 @@ module tb_open_row_scheduler;
     logic command_valid,command_ready=1,command_chip,command_all_banks;
     logic[2:0]command;logic[1:0]command_bank;logic[12:0]command_row;logic[9:0]command_column;
     logic burst_done,completion_valid,completion_ready=1,timing_violation,row_hit;
+    logic refresh_valid,refresh_ready,refresh_chip,refresh_completion_valid,refresh_completion_ready=1;
     integer cycle=0,act_count=0,pre_count=0,read_count=0,write_count=0;
-    integer last_command_cycle=-1,last_write_end_cycle=-1,last_pre_cycle=-1;
+    integer last_command_cycle=-1,last_write_end_cycle=-1,last_pre_cycle=-1,last_refresh_cycle=-1;
     always #5 clk=~clk;
     always @(posedge clk) begin
       cycle<=cycle+1;
@@ -16,11 +17,17 @@ module tb_open_row_scheduler;
         case(command)
           ACT:act_count<=act_count+1;PRE:begin pre_count<=pre_count+1;last_pre_cycle<=cycle;end
           READ:read_count<=read_count+1;WRITE:write_count<=write_count+1;
+          3'd5:last_refresh_cycle<=cycle;
         endcase
       end
       if(burst_done&&op_write)last_write_end_cycle<=cycle;
     end
     sdram_open_row_scheduler #(.SDRAM_FREQ_HZ(130_000_000)) dut(.*);
+    initial begin
+      repeat(500)@(posedge clk);
+      $fatal(1,"scheduler watchdog state=%0d op_ready=%b refresh_ready=%b command=%0d valid=%b",
+             dut.state,op_ready,refresh_ready,command,command_valid);
+    end
 
     task submit(input logic write,input logic chip,input logic[1:0]bank,
                 input logic[12:0]row,input logic[9:0]column);
@@ -35,9 +42,17 @@ module tb_open_row_scheduler;
         wait(completion_valid);@(negedge clk);
       end
     endtask
+    task submit_refresh(input logic chip);
+      begin
+        @(negedge clk);refresh_chip=chip;refresh_valid=1;
+        if(!refresh_ready)$fatal(1,"submitted refresh while scheduler busy");
+        @(posedge clk);@(negedge clk);refresh_valid=0;
+      end
+    endtask
 
     initial begin
       op_valid=0;op_write=0;op_chip=0;op_bank=0;op_row=0;op_column=0;burst_done=0;
+      refresh_valid=0;refresh_chip=0;
       repeat(2)@(negedge clk);reset=0;
 
       submit(0,0,0,13'h010,10'h008);wait(command_valid&&command==READ);complete_burst();
@@ -61,7 +76,25 @@ module tb_open_row_scheduler;
           $fatal(1,"stalled command changed");end
       end
       command_ready=1;wait(command_valid&&command==READ);complete_burst();
+
+      // Refresh closes only the requested chip and observes PRECHARGE-ALL/tRP.
+      submit_refresh(0);wait(command_valid&&command==PRE);
+      if(!command_all_banks||command_chip!=0)$fatal(1,"refresh did not precharge selected chip");
+      wait(command_valid&&command==3'd5);wait(refresh_completion_valid);@(negedge clk);
+
+      // The other chip remains usable while chip 0 is inside tRFC.
+      begin integer accepted_cycle;
+        submit(0,1,2,13'h222,10'h155);accepted_cycle=cycle;
+        wait(command_valid&&command==READ);
+        if(cycle-accepted_cycle>2)$fatal(1,"chip 0 refresh blocked independent chip 1");
+        complete_burst();
+      end
+
+      // The refreshed chip itself must wait until tRFC has elapsed.
+      submit(0,0,0,13'h333,10'h001);wait(command_valid&&command==ACT);
+      if(cycle-last_refresh_cycle<9)$fatal(1,"ACT violated tRFC");
+      wait(command_valid&&command==READ);complete_burst();
       if(timing_violation)$fatal(1,"scheduler emitted an illegal command");
-      $display("PASS open-row scheduler: closed, hit, conflict, tWR, and command stall");$finish;
+      $display("PASS open-row scheduler: row policy, stalls, refresh, chip independence");$finish;
     end
 endmodule

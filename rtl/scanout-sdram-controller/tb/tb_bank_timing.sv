@@ -5,14 +5,15 @@ module tb_bank_timing;
     logic [2:0]command;logic[1:0]command_bank,burst_bank,target_bank;
     logic[12:0]command_row,target_row;logic target_chip;
     logic target_open,target_row_hit,can_activate,can_precharge,can_read,can_write,command_legal,timing_violation;
-    logic idle0,idle1,can_refresh;
+    logic idle0,idle1,can_precharge_all,can_refresh;
     always #5 clk=~clk;
     sdram_bank_timing #(.SDRAM_FREQ_HZ(130_000_000)) dut(
       .clk,.reset,.command_fire,.command,.command_chip,.command_bank,.command_row,.command_all_banks,
       .command_legal,.timing_violation,
       .burst_done,.burst_write,.burst_chip,.burst_bank,.target_chip,.target_bank,.target_row,
       .target_open,.target_row_hit,.can_activate,.can_precharge,.can_read,.can_write,
-      .chip0_all_banks_idle(idle0),.chip1_all_banks_idle(idle1),.can_refresh_target(can_refresh));
+      .chip0_all_banks_idle(idle0),.chip1_all_banks_idle(idle1),
+      .can_precharge_all_target(can_precharge_all),.can_refresh_target(can_refresh));
 
     task issue(input logic[2:0]cmd,input logic chip,input logic[1:0]bank,input logic[12:0]row);
       begin @(negedge clk);command=cmd;command_chip=chip;command_bank=bank;command_row=row;command_fire=1;

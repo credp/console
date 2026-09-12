@@ -22,7 +22,10 @@ Implemented and independently testable:
   for all eight physical banks. It qualifies ACTIVATE, PRECHARGE, READ, WRITE,
   PRECHARGE ALL, and AUTO REFRESH against tRCD, tRP, tRAS, tRC, tRRD, tWR, and
   tRFC. The scheduler resolves closed-bank, row-hit, and row-conflict cases and
-  holds a proposed command stable under command-bus backpressure.
+  holds a proposed command stable under command-bus backpressure. A refresh
+  request has priority only between physical operations; it legally closes all
+  banks of the selected chip, waits through tRP, and issues AUTO REFRESH without
+  imposing that chip's tRFC recovery on operations targeting the other chip.
 
 Run `make test` for directed tests, `make lint` for Verilator lint, and
 `make formal` for SymbiYosys proofs of open-row command legality, splitter physical bounds, strict arbiter
@@ -31,8 +34,10 @@ publish/replay), FIFO ordering/conservation, and refresh-command deadlines for
 both open- and closed-bank cases.
 
 The new scheduler is deliberately not connected to the hardware-qualified 006.b
-experiment or its conservative BL8 engine. Runtime refresh arbitration, DQ
-turnaround, data-beat integration, and multi-operation scheduling must be added
+experiment or its conservative BL8 engine. Its refresh request port is not yet
+a refresh deadline generator: bounding request-to-service latency requires the
+physical burst engine to provide a bounded operation duration. DQ turnaround,
+data-beat integration, deadline generation, and multi-operation scheduling must be added
 and verified before creating a successor hardware experiment. The production
 board-facing DQ PHY, asynchronous CDC FIFOs, complete multi-client queues,
 counters, and full-frame acceptance harness also remain integration work. The

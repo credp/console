@@ -32,6 +32,7 @@ module sdram_bank_timing #(
     output logic        can_write,
     output logic        chip0_all_banks_idle,
     output logic        chip1_all_banks_idle,
+    output logic        can_precharge_all_target,
     output logic        can_refresh_target
 );
     localparam logic [2:0] CMD_ACT   = 3'd1;
@@ -76,7 +77,19 @@ module sdram_bank_timing #(
 
     integer chip_index;
     integer bank_index;
-    integer precharge_index;
+    function automatic logic precharge_all_ready(input logic chip);
+        integer index;
+        begin
+            precharge_all_ready = 1'b1;
+            for (index = 0; index < 4; index = index + 1) begin
+                if (bank_open[chip][index] &&
+                    (read_inflight[chip][index] || write_inflight[chip][index] ||
+                     since_activate[chip][index] < TRAS || since_write_end[chip][index] < TWR))
+                    precharge_all_ready = 1'b0;
+            end
+        end
+    endfunction
+
     always_comb begin
         target_open = bank_open[target_chip][target_bank];
         target_row_hit = target_open && (open_row[target_chip][target_bank] == target_row);
@@ -101,6 +114,7 @@ module sdram_bank_timing #(
                    (since_activate[target_chip][target_bank] >= TRCD) &&
                    (since_refresh[target_chip] >= TRFC);
         can_write = can_read;
+        can_precharge_all_target = precharge_all_ready(target_chip);
         can_refresh_target = (target_chip ? chip1_all_banks_idle : chip0_all_banks_idle) &&
                              (since_precharge[target_chip][0] >= TRP) &&
                              (since_precharge[target_chip][1] >= TRP) &&
@@ -126,15 +140,7 @@ module sdram_bank_timing #(
                              !write_inflight[command_chip][command_bank] &&
                              (since_activate[command_chip][command_bank] >= TRCD) &&
                              (since_refresh[command_chip] >= TRFC);
-        precharge_all_legal = 1'b1;
-        for (precharge_index = 0; precharge_index < 4; precharge_index = precharge_index + 1) begin
-            if (bank_open[command_chip][precharge_index] &&
-                (read_inflight[command_chip][precharge_index] ||
-                 write_inflight[command_chip][precharge_index] ||
-                 since_activate[command_chip][precharge_index] < TRAS ||
-                 since_write_end[command_chip][precharge_index] < TWR))
-                precharge_all_legal = 1'b0;
-        end
+        precharge_all_legal = precharge_all_ready(command_chip);
         command_can_refresh = (command_chip ? chip1_all_banks_idle : chip0_all_banks_idle) &&
                               (since_precharge[command_chip][0] >= TRP) &&
                               (since_precharge[command_chip][1] >= TRP) &&
