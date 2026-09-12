@@ -65,7 +65,8 @@ The benchmark infrastructure is intentionally outside production RTL:
 tools/sdram-backend-bench/
     README.md
     generate_trace.py
-    run_bench.py
+    trace_to_mem.py
+    test_generate_trace.py
     traces/
         generated deterministic workload traces
     results/
@@ -80,9 +81,9 @@ third_party/
 ```
 
 The primary benchmark artifact is a deterministic logical request trace.  It
-establishes workload demand only.  The existing command-level model is retained
-as a synthetic smoke tool while RTL wrappers are being built; it is not a
-source of architectural performance evidence.
+establishes workload demand only.  Earlier command-level controller models were
+removed to keep the benchmark boundary honest: Python generates demand, RTL
+measures service.
 
 ## Common Trace Format
 
@@ -316,8 +317,6 @@ throughput on this FPGA.
   is driven through the smallest reasonable arbiter/shim and reported as such.
 - The trace generator describes demand only.  It does not choose arbitration
   order, schedule SDRAM commands, classify row hits, or model refresh.
-- The command-level model is synthetic/model-only and should not be used for
-  final performance conclusions.
 - Short generated traces are smoke tests.  Full-frame traces should still be
   replayed before drawing architectural conclusions, especially for refresh
   phase and long-tail latency behaviour.
@@ -328,7 +327,7 @@ throughput on this FPGA.
 ## Review Gates
 
 1. Commit this benchmark plan.
-2. Commit deterministic trace generator and command-level result collector.
+2. Commit deterministic trace generator and RTL fixture converter.
 3. Add RTL wrappers for stock simple, request-layer simple, and custom current.
 4. Add Quartus sizing harnesses for each wrapper.
 5. Only then make architectural recommendations.

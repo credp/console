@@ -38,88 +38,36 @@ use the line-buffer reuse deadline; audio capture requests use the next audio
 chunk deadline; background requests have no deadline.  HDMI presentation is
 not represented because normal scanout/resampling is BRAM traffic.
 
-The older `run_bench.py` command-level runner remains available as a
-synthetic/model-only smoke tool.  It exercises shared workload traces against
-three placeholder policies:
-
-- `stock_simple`: simple auto-precharge physical controller style;
-- `request_simple`: same simple backend with request-layer overhead;
-- `custom_current`: current open-row/custom-backend policy model.
-
-It is not a replacement for RTL simulation or Quartus fitting, and its results
-should not be used for architectural conclusions.
-
-Run the synthetic model:
+Run the generator smoke test:
 
 ```bash
-python3 tools/sdram-backend-bench/run_bench.py
+python3 tools/sdram-backend-bench/test_generate_trace.py
 ```
 
-Optional:
+Use `--frames 1` without `--lines` for a full 720-line frame trace.  Full-frame
+high-load traces are intentionally larger than a smoke trace.
 
-```bash
-python3 tools/sdram-backend-bench/run_bench.py --csv /tmp/sdram-bench.csv
-```
-
-Dump legacy synthetic workload traces for RTL/testbench experiments:
-
-```bash
-python3 tools/sdram-backend-bench/run_bench.py --dump-traces /tmp/sdram-traces
-```
-
-Run the command-level models from previously dumped traces:
-
-```bash
-python3 tools/sdram-backend-bench/run_bench.py --trace-dir /tmp/sdram-traces
-```
-
-Run the legacy synthetic real-machine capture topology sweep:
-
-```bash
-python3 tools/sdram-backend-bench/run_bench.py \
-  --machine-capture \
-  --clock-mode fmax \
-  --line-buffers 2 \
-  --line-packet-words 128 \
-  --lines 30
-```
-
-This mode models one 2560-byte video capture line arriving every source-line
-period, chunked audio capture, and increasing background traffic through a
-command-level policy model.  Treat its output as synthetic only.
-
-Use `--frames 1` without `--lines` for a full 720-line frame sweep.  Full-frame
-high-load sweeps are intentionally heavier than the smoke command above.
-
-If `--line-packet-words` is omitted, machine-capture mode sweeps:
+Sweep packetization by running the generator with different
+`--line-packet-words` values, for example:
 
 ```text
 8, 16, 32, 64, 128, 256, 640, 1280
 ```
 
-Use repeated `--line-packet-words` options to choose a smaller packet matrix.
-`--raster-mode logical` is the default and means 720 active source lines per
-1/60 sec frame with no assumed HDMI blanking.  `--raster-mode blanked` uses
-`--raster-total-lines` to insert vertical blanking after the active region.
-
 Convert one trace to a `$readmemh`-friendly RTL fixture:
 
 ```bash
 python3 tools/sdram-backend-bench/trace_to_mem.py \
-  /tmp/sdram-traces/boundary_cases.csv \
-  /tmp/boundary_cases.mem
+  /tmp/machine-capture.csv \
+  /tmp/machine-capture.mem
 ```
 
-Legacy `run_bench.py --dump-traces` files use the older CSV format documented
-by that script:
+The packed `.mem` record is 224 bits:
 
 ```text
-cycle,client,op,address,words,byte_enable,tag
+issue_time_ns[223:160] deadline_ns[159:96] client[95:92] write[91]
+address[90:59] length_words[58:43] byte_enable[42:41] tag[40:9]
+reserved[8:0]
 ```
 
-The packed `.mem` record is 96 bits:
-
-```text
-cycle[95:64] client[63:62] write[61] address[60:34]
-words[33:18] byte_enable[17:16] tag[15:0]
-```
+`deadline_ns` is all ones when the CSV deadline is `-1`.
