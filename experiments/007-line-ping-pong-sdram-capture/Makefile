@@ -25,9 +25,9 @@ COMMON_TB_RTL := \
 	../../rtl/scanout-sdram-controller/tb/pin-model/sdram_pair_model.sv \
 	tb/tb_line_ping_pong_capture.sv
 
-.PHONY: test test-custom test-agg23-word test-agg23-burst clean
+.PHONY: test test-custom test-agg23-word test-agg23-burst test-agg23-bl8-write clean
 
-test: test-custom test-agg23-word test-agg23-burst
+test: test-custom test-agg23-word test-agg23-burst test-agg23-bl8-write
 
 test-custom: build/tb_line_ping_pong_capture_custom.vvp
 	$(VVP) $<
@@ -37,6 +37,9 @@ test-agg23-word: build/tb_line_ping_pong_capture_agg23_word.vvp
 
 test-agg23-burst: build/tb_line_ping_pong_capture_agg23_burst.vvp
 	build/obj_agg23_burst/tb_line_ping_pong_capture_agg23_burst
+
+test-agg23-bl8-write: build/tb_line_ping_pong_capture_agg23_bl8_write.vvp
+	build/obj_agg23_bl8_write/tb_line_ping_pong_capture_agg23_bl8_write
 
 build/tb_line_ping_pong_capture_custom.vvp: $(COMMON_TB_RTL)
 	mkdir -p build
@@ -54,6 +57,13 @@ build/tb_line_ping_pong_capture_agg23_burst.vvp: $(COMMON_TB_RTL) ../../third_pa
 	$(VERILATOR) --binary -Wno-fatal --timing -DSIMULATION -DSDRAM_BACKEND_AGG23_BURST \
 		--top-module tb_line_ping_pong_capture --Mdir build/obj_agg23_burst \
 		-o tb_line_ping_pong_capture_agg23_burst $(COMMON_TB_RTL)
+	touch $@
+
+build/tb_line_ping_pong_capture_agg23_bl8_write.vvp: $(COMMON_TB_RTL)
+	mkdir -p build
+	$(VERILATOR) --binary -Wno-fatal --timing -DSIMULATION -DSDRAM_BACKEND_AGG23_BL8_WRITE \
+		--top-module tb_line_ping_pong_capture --Mdir build/obj_agg23_bl8_write \
+		-o tb_line_ping_pong_capture_agg23_bl8_write $(COMMON_TB_RTL)
 	touch $@
 
 clean:

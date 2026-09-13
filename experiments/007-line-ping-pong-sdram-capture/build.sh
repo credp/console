@@ -17,15 +17,19 @@ case "$backend" in
 		macro="SDRAM_BACKEND_AGG23_BURST=1"
 		export LINT_FLAGS="${LINT_FLAGS:-} -DSDRAM_BACKEND_AGG23_BURST"
 		;;
+	agg23-bl8-write)
+		macro="SDRAM_BACKEND_AGG23_BL8_WRITE=1"
+		export LINT_FLAGS="${LINT_FLAGS:-} -DSDRAM_BACKEND_AGG23_BL8_WRITE"
+		;;
 	all)
-		for b in custom agg23-word agg23-burst; do
+		for b in custom agg23-word agg23-burst agg23-bl8-write; do
 			printf '\n=== Building BACKEND=%s ===\n' "$b"
 			BACKEND="$b" "$0" "$@"
 		done
 		exit 0
 		;;
 	*)
-		printf 'Unknown BACKEND=%s (expected custom, agg23-word, agg23-burst, or all)\n' "$backend" >&2
+		printf 'Unknown BACKEND=%s (expected custom, agg23-word, agg23-burst, agg23-bl8-write, or all)\n' "$backend" >&2
 		exit 1
 		;;
 esac

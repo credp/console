@@ -4,6 +4,8 @@ module tb_line_ping_pong_capture;
     localparam bit EXPECT_NO_REUSE_ERROR = 1'b0;
 `elsif SDRAM_BACKEND_AGG23_BURST
     localparam bit EXPECT_NO_REUSE_ERROR = 1'b0;
+`elsif SDRAM_BACKEND_AGG23_BL8_WRITE
+    localparam bit EXPECT_NO_REUSE_ERROR = 1'b1;
 `else
     localparam bit EXPECT_NO_REUSE_ERROR = 1'b1;
 `endif

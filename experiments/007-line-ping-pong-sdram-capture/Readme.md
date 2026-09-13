@@ -65,7 +65,17 @@ Available backends:
 make test-custom
 make test-agg23-word
 make test-agg23-burst
+make test-agg23-bl8-write
 ```
+
+Current simulation results at 100 MHz SDRAM clock:
+
+| Backend | Result | Worst drain |
+| --- | --- | --- |
+| custom | PASS | 3094 cycles |
+| agg23-word | CAPACITY_FAIL | 11633 cycles |
+| agg23-burst | CAPACITY_FAIL | 11633 cycles |
+| agg23-bl8-write | PASS | 2751 cycles |
 
 ## Build
 
@@ -82,6 +92,7 @@ Build a specific SDRAM backend with:
 BACKEND=custom ./build.sh
 BACKEND=agg23-word ./build.sh
 BACKEND=agg23-burst ./build.sh
+BACKEND=agg23-bl8-write ./build.sh
 BACKEND=all ./build.sh
 ```
 
@@ -93,6 +104,28 @@ there is no runtime controller switch.
 continuous burst reads. Its write path still behaves as single-word write
 traffic for this capture workload, so it is a useful physical comparison point
 but not a line-burst write implementation.
+
+`agg23-bl8-write` is a tiny sequential-write backend for this experiment's
+single client. It initializes SDRAM for BL8 writes, keeps only the current row
+open, streams each collected group of eight line words as one WRITE burst, and
+precharges at row boundaries or line completion. It has no scheduler,
+arbitration, read path, large FIFO, or transaction reordering.
+
+Backend selection deliberately uses plain nested `ifdef` blocks rather than
+SystemVerilog `elsif`, because Quartus 17 did not reliably elaborate the
+selected backend from the QSF macro when `elsif` was used.
+
+Current DE10-Nano / MiSTer Quartus measurements for the two passing backends:
+
+| Backend | ALMs | Registers | Block memory bits | SDRAM Fmax | Worst SDRAM setup slack | SDRAM output setup slack |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| custom | 8,182 | 12,374 | 425,217 | 86.73 MHz | -1.530 ns | +1.958 ns |
+| agg23-bl8-write | 7,401 | 11,827 | 425,217 | 113.40 MHz | -0.237 ns | +1.958 ns |
+
+The custom backend also includes a local output-enable timing experiment: the
+SDRAM DQ output-enable register is replicated per bit and packed into the fast
+I/O output-enable registers. Quartus confirms this in the fitter report, but
+the internal SDRAM clock domain still fails setup.
 
 The experiment targets the existing DE10-Nano / MiSTer template setup and keeps
 the physical 720p raster timing from `raster_720p`.
