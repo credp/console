@@ -1,5 +1,13 @@
 `timescale 1ns/1ps
 module tb_line_ping_pong_capture;
+`ifdef SDRAM_BACKEND_AGG23_WORD
+    localparam bit EXPECT_NO_REUSE_ERROR = 1'b0;
+`elsif SDRAM_BACKEND_AGG23_BURST
+    localparam bit EXPECT_NO_REUSE_ERROR = 1'b0;
+`else
+    localparam bit EXPECT_NO_REUSE_ERROR = 1'b1;
+`endif
+
     logic clk = 0, reset = 1;
     always #5 clk = ~clk;
 
@@ -27,16 +35,11 @@ module tb_line_ping_pong_capture;
     logic sdram_cke, sdram_ncs, sdram_nras, sdram_ncas, sdram_nwe;
     logic sdram_dqml, sdram_dqmh;
     wire [15:0] dq;
-    logic [15:0] sdram_dq_in, sdram_dq_out;
-    logic sdram_dq_oe;
+    logic sdram_clk;
     logic [31:0] source_lines_generated, sdram_lines_submitted, sdram_lines_completed;
     logic reuse_before_drain_error;
     logic [15:0] worst_line_drain_cycles, current_line_drain_cycles;
-    logic late_refresh0, late_refresh1, refresh_pending, timing_violation;
-    logic turnaround_blocked, row_hit, phy_busy;
-
-    assign dq = sdram_dq_oe ? sdram_dq_out : 16'hzzzz;
-    assign sdram_dq_in = dq;
+    logic sdram_backend_error;
 
     line_ping_pong_capture dut (
         .clk_source(clk), .reset_source(reset | ~init_done),
@@ -50,20 +53,23 @@ module tb_line_ping_pong_capture;
         .worst_line_drain_cycles, .current_line_drain_cycles
     );
 
-    sdram_single_client_controller #(
-        .SDRAM_FREQ_HZ(100_000_000), .POWERUP_US(1), .INIT_REFRESH_COUNT(2),
+    line_capture_sdram_backend #(
+        .SDRAM_FREQ_HZ(100_000_000), .SDRAM_FREQ_MHZ(100),
+        .POWERUP_US(1), .INIT_REFRESH_COUNT(2),
         .READ_CAPTURE_CYCLES(3), .MAX_REFRESH_SERVICE_CYCLES(24),
         .MAX_REQUEST_WORDS(1280)
-    ) controller (
-        .clk, .reset, .req_valid, .req_ready, .req_write, .req_byte_address,
+    ) backend (
+        .clk, .clk_capture(clk), .reset,
+        .req_valid, .req_ready, .req_write, .req_byte_address,
         .req_words, .req_tag, .write_valid, .write_ready, .write_data,
         .write_byte_enable, .read_valid, .read_ready, .read_data,
         .completion_valid, .completion_ready, .completion_tag, .completion_words,
-        .completion_error, .init_done, .sdram_a, .sdram_ba, .sdram_cke,
-        .sdram_ncs, .sdram_nras, .sdram_ncas, .sdram_nwe, .sdram_dqml,
-        .sdram_dqmh, .sdram_dq_in, .sdram_dq_out, .sdram_dq_oe,
-        .late_refresh0, .late_refresh1, .refresh_pending, .timing_violation,
-        .turnaround_blocked, .row_hit, .phy_busy
+        .completion_error, .init_done, .diagnostic_error(sdram_backend_error),
+        .SDRAM_A(sdram_a), .SDRAM_BA(sdram_ba), .SDRAM_CKE(sdram_cke),
+        .SDRAM_nCS(sdram_ncs), .SDRAM_nRAS(sdram_nras),
+        .SDRAM_nCAS(sdram_ncas), .SDRAM_nWE(sdram_nwe),
+        .SDRAM_DQML(sdram_dqml), .SDRAM_DQMH(sdram_dqmh),
+        .SDRAM_DQ(dq), .SDRAM_CLK(sdram_clk)
     );
 
     sdram_pair_model memory (
@@ -133,19 +139,23 @@ module tb_line_ping_pong_capture;
             $fatal(1, "each completed line should complete one request");
         if (sdram_lines_submitted > source_lines_generated)
             $fatal(1, "submitted more lines than generated");
-        if (reuse_before_drain_error)
+        if (reuse_before_drain_error && EXPECT_NO_REUSE_ERROR)
             $fatal(1, "buffer reuse before SDRAM drain");
         if (!presented_from_buffer0 || !presented_from_buffer1)
             $fatal(1, "presentation did not observe both completed buffers");
-        if (late_refresh0 || late_refresh1 || timing_violation)
-            $fatal(1, "SDRAM controller diagnostic failure");
-        $display("PASS line ping-pong capture: lines=%0d requests=%0d worst_drain=%0d",
-                 sdram_lines_completed, accepted_requests, worst_line_drain_cycles);
+        if (sdram_backend_error)
+            $fatal(1, "SDRAM backend diagnostic failure");
+        if (reuse_before_drain_error)
+            $display("RESULT line ping-pong capture: CAPACITY_FAIL reuse_before_drain=1 lines=%0d requests=%0d worst_drain=%0d",
+                     sdram_lines_completed, accepted_requests, worst_line_drain_cycles);
+        else
+            $display("RESULT line ping-pong capture: PASS reuse_before_drain=0 lines=%0d requests=%0d worst_drain=%0d",
+                     sdram_lines_completed, accepted_requests, worst_line_drain_cycles);
         $finish;
     end
 
     initial begin
-        repeat (30000) @(posedge clk);
+        repeat (2_000_000) @(posedge clk);
         $fatal(1, "line ping-pong capture watchdog");
     end
 endmodule

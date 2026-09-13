@@ -20,7 +20,7 @@ two 1280 x 16-bit BRAM line buffers
 Only two line buffers are used. One buffer is filled while the other contains
 the most recently completed line. At line completion the roles swap. The
 completed line is displayed from BRAM and submitted once to SDRAM as one
-sequential 1280-word write request through `sdram_single_client_controller`.
+sequential 1280-word write request through a narrow SDRAM backend wrapper.
 
 The pattern is a simple function of X, Y, and frame count. It is meant to make
 stale or corrupted line reuse visible, not to be pretty.
@@ -42,7 +42,7 @@ which is the specific slack condition this prototype is meant to expose.
 - `current_line_drain_cycles`
 
 On hardware, `LED_USER` is solid once SDRAM initialization completes and flashes
-if `reuse_before_drain_error` is set.
+if `reuse_before_drain_error` or a backend diagnostic error is set.
 
 ## Simulation
 
@@ -53,10 +53,19 @@ cd experiments/007-line-ping-pong-sdram-capture
 make test
 ```
 
-The test uses the actual RTL SDRAM controller path with the repo's SDRAM pair
+The test uses actual RTL SDRAM controller paths with the repo's SDRAM pair
 model. It checks buffer alternation, deterministic presented data, one SDRAM
-request per completed line, request/completion matching, and no buffer reuse
-before drain in the tested configuration.
+request per completed line, and request/completion matching. The custom backend
+keeps no-reuse-before-drain as a hard assertion. The comparison backends report
+reuse-before-drain as a capacity result so the whole matrix can finish.
+
+Available backends:
+
+```bash
+make test-custom
+make test-agg23-word
+make test-agg23-burst
+```
 
 ## Build
 
@@ -66,6 +75,24 @@ Build like the earlier experiments:
 cd experiments/007-line-ping-pong-sdram-capture
 ./build.sh
 ```
+
+Build a specific SDRAM backend with:
+
+```bash
+BACKEND=custom ./build.sh
+BACKEND=agg23-word ./build.sh
+BACKEND=agg23-burst ./build.sh
+BACKEND=all ./build.sh
+```
+
+Each successful build copies the generated RBF to a backend-specific name under
+`output_files/Template-<backend>.rbf`. Backend selection is compile-time only;
+there is no runtime controller switch.
+
+`agg23-burst` uses `sdram_burst.sv`, but that controller is oriented around
+continuous burst reads. Its write path still behaves as single-word write
+traffic for this capture workload, so it is a useful physical comparison point
+but not a line-burst write implementation.
 
 The experiment targets the existing DE10-Nano / MiSTer template setup and keeps
 the physical 720p raster timing from `raster_720p`.

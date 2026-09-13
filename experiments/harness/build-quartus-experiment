@@ -11,6 +11,7 @@ readonly QUARTUS_SH="${QUARTUS_SH:-${QUARTUS_ROOTDIR}/bin/quartus_sh}"
 readonly VERILATOR="${VERILATOR:-/usr/bin/verilator}"
 readonly LINT_TOP="${LINT_TOP:-mycore}"
 readonly LINT_ENTRY="${LINT_ENTRY:-rtl/mycore.v}"
+readonly LINT_FLAGS="${LINT_FLAGS:-}"
 readonly BUILD_DIR="${BUILD_DIR:-${EXPERIMENT_DIR}/build}"
 readonly QUARTUS_LOG="${BUILD_DIR}/quartus.log"
 readonly EXPECTED_RBF="${EXPERIMENT_DIR}/output_files/${PROJECT_REVISION}.rbf"
@@ -49,7 +50,7 @@ cd "$EXPERIMENT_DIR"
     --error-limit 0 -I. -y rtl +libext+.v+.sv -Wall -Wno-fatal \
     -Wwarn-PINMISSING -Wwarn-PINCONNECTEMPTY -Wwarn-WIDTH \
     -Werror-LATCH -Werror-MULTIDRIVEN -Werror-UNDRIVEN \
-    "${lint_include_dir}/quartus_stubs.sv" "$LINT_ENTRY"
+    $LINT_FLAGS "${lint_include_dir}/quartus_stubs.sv" "$LINT_ENTRY"
 
 rm -rf -- "$lint_include_dir"
 trap - EXIT
@@ -61,4 +62,3 @@ if ! "$QUARTUS_SH" --flow compile "$PROJECT_FILE" >"$QUARTUS_LOG" 2>&1; then
 fi
 [[ -f "$EXPECTED_RBF" ]] || die "expected output was not produced: $EXPECTED_RBF"
 printf 'Build succeeded: %s\n' "$EXPECTED_RBF"
-

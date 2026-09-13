@@ -1,4 +1,5 @@
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/line_ping_pong_capture.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/line_capture_sdram_backend.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/raster_720p.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram_pll.sv
 set_global_assignment -name SDC_FILE Template.sdc

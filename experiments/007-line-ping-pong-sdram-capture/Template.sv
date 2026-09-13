@@ -226,58 +226,11 @@ line_ping_pong_capture line_source
 	.current_line_drain_cycles(current_line_drain_cycles)
 );
 
-wire [12:0] core_sdram_a;
-wire [1:0] core_sdram_ba;
-wire core_sdram_cke, core_sdram_ncs, core_sdram_nras, core_sdram_ncas, core_sdram_nwe;
-wire core_sdram_dqml, core_sdram_dqmh, core_sdram_dq_oe;
-wire [15:0] core_sdram_dq_out;
-reg [12:0] phy_sdram_a;
-reg [1:0] phy_sdram_ba;
-reg phy_sdram_cke, phy_sdram_ncs, phy_sdram_nras, phy_sdram_ncas, phy_sdram_nwe;
-reg phy_sdram_dqml, phy_sdram_dqmh, phy_sdram_dq_oe;
-reg [15:0] phy_sdram_dq_out;
-reg [15:0] phy_sdram_dq_in;
+wire sdram_backend_error;
 
-always @(posedge clk_sdram) begin
-	phy_sdram_a <= core_sdram_a;
-	phy_sdram_ba <= core_sdram_ba;
-	phy_sdram_cke <= core_sdram_cke;
-	phy_sdram_ncs <= core_sdram_ncs;
-	phy_sdram_nras <= core_sdram_nras;
-	phy_sdram_ncas <= core_sdram_ncas;
-	phy_sdram_nwe <= core_sdram_nwe;
-	phy_sdram_dqml <= core_sdram_dqml;
-	phy_sdram_dqmh <= core_sdram_dqmh;
-	phy_sdram_dq_oe <= core_sdram_dq_oe;
-	phy_sdram_dq_out <= core_sdram_dq_out;
-end
-
-// Keep the capture register adjacent to the top-level pin.  006.a found that
-// a half-cycle shifted capture clock matters for the external SDRAM DQ path.
-always @(posedge clk_capture) phy_sdram_dq_in <= SDRAM_DQ;
-
-assign SDRAM_A = phy_sdram_a;
-assign SDRAM_BA = phy_sdram_ba;
-assign SDRAM_CKE = phy_sdram_cke;
-assign SDRAM_nCS = phy_sdram_ncs;
-assign SDRAM_nRAS = phy_sdram_nras;
-assign SDRAM_nCAS = phy_sdram_ncas;
-assign SDRAM_nWE = phy_sdram_nwe;
-assign SDRAM_DQML = phy_sdram_dqml;
-assign SDRAM_DQMH = phy_sdram_dqmh;
-assign SDRAM_DQ = phy_sdram_dq_oe ? phy_sdram_dq_out : 16'hzzzz;
-
-altddio_out #(.extend_oe_disable("OFF"),.intended_device_family("Cyclone V"),
-	.invert_output("OFF"),.lpm_hint("UNUSED"),.lpm_type("altddio_out"),
-	.oe_reg("UNREGISTERED"),.power_up_high("OFF"),.width(1)) sdramclk_ddr
+line_capture_sdram_backend #(.SDRAM_FREQ_HZ(100_000_000), .SDRAM_FREQ_MHZ(100), .MAX_REQUEST_WORDS(1280)) sdram_capture
 (
-	.datain_h(1'b0),.datain_l(1'b1),.outclock(clk_sdram),.dataout(SDRAM_CLK),
-	.aclr(1'b0),.aset(1'b0),.oe(1'b1),.outclocken(1'b1),.sclr(1'b0),.sset(1'b0)
-);
-
-sdram_single_client_controller #(.SDRAM_FREQ_HZ(100_000_000), .MAX_REQUEST_WORDS(1280)) sdram_capture
-(
-	.clk(clk_sdram), .reset(reset),
+	.clk(clk_sdram), .clk_capture(clk_capture), .reset(reset),
 	.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 	.req_byte_address(req_byte_address), .req_words(req_words), .req_tag(req_tag),
 	.write_valid(write_valid), .write_ready(write_ready), .write_data(write_data),
@@ -286,14 +239,11 @@ sdram_single_client_controller #(.SDRAM_FREQ_HZ(100_000_000), .MAX_REQUEST_WORDS
 	.completion_valid(completion_valid), .completion_ready(completion_ready),
 	.completion_tag(completion_tag), .completion_words(completion_words),
 	.completion_error(completion_error), .init_done(sdram_init_done),
-	.sdram_a(core_sdram_a), .sdram_ba(core_sdram_ba), .sdram_cke(core_sdram_cke),
-	.sdram_ncs(core_sdram_ncs), .sdram_nras(core_sdram_nras),
-	.sdram_ncas(core_sdram_ncas), .sdram_nwe(core_sdram_nwe),
-	.sdram_dqml(core_sdram_dqml), .sdram_dqmh(core_sdram_dqmh),
-	.sdram_dq_in(phy_sdram_dq_in), .sdram_dq_out(core_sdram_dq_out),
-	.sdram_dq_oe(core_sdram_dq_oe),
-	.late_refresh0(), .late_refresh1(), .refresh_pending(),
-	.timing_violation(), .turnaround_blocked(), .row_hit(), .phy_busy()
+	.diagnostic_error(sdram_backend_error),
+	.SDRAM_A(SDRAM_A), .SDRAM_BA(SDRAM_BA), .SDRAM_CKE(SDRAM_CKE),
+	.SDRAM_nCS(SDRAM_nCS), .SDRAM_nRAS(SDRAM_nRAS), .SDRAM_nCAS(SDRAM_nCAS),
+	.SDRAM_nWE(SDRAM_nWE), .SDRAM_DQML(SDRAM_DQML), .SDRAM_DQMH(SDRAM_DQMH),
+	.SDRAM_DQ(SDRAM_DQ), .SDRAM_CLK(SDRAM_CLK)
 );
 
 assign VGA_DE = de_raw;
@@ -308,6 +258,6 @@ assign VIDEO_ARY = 13'd9;
 
 reg  [26:0] act_cnt;
 always @(posedge clk_sys) act_cnt <= act_cnt + 1'd1; 
-assign LED_USER = reuse_before_drain_error ? act_cnt[22] : sdram_init_done;
+assign LED_USER = (reuse_before_drain_error || sdram_backend_error) ? act_cnt[22] : sdram_init_done;
 
 endmodule
