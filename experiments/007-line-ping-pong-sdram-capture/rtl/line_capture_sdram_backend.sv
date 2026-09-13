@@ -220,6 +220,8 @@ module line_capture_bl8_write_backend #(
     logic [1:0] dqm_q;
     logic dq_oe_q;
     logic error_q;
+    (* altera_attribute = {"-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS"} *) logic reset_sync_meta = 1'b1;
+    (* altera_attribute = {"-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS"} *) logic reset_sync = 1'b1;
 
     assign {SDRAM_nCS, SDRAM_nRAS, SDRAM_nCAS, SDRAM_nWE} = command;
     assign SDRAM_DQ = dq_oe_q ? dq_out_q : 16'hzzzz;
@@ -247,7 +249,10 @@ module line_capture_bl8_write_backend #(
     );
 
     always_ff @(posedge clk) begin
-        if (reset) begin
+        reset_sync_meta <= reset;
+        reset_sync <= reset_sync_meta;
+
+        if (reset_sync) begin
             state <= INIT_WAIT;
             command <= CMD_NOP;
             wait_count <= POWERUP_CYCLES[31:0];

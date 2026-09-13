@@ -45,3 +45,8 @@ set_input_delay \
 set_multicycle_path 2 -setup \
     -from [get_ports {SDRAM_DQ[*]}] \
     -to [get_registers {emu|phy_sdram_dq_in[*]}]
+
+set bl8_reset_sync_meta [get_registers -nowarn {emu|sdram_capture|backend|reset_sync_meta}]
+if {[get_collection_size $bl8_reset_sync_meta] > 0} {
+    set_false_path -to $bl8_reset_sync_meta
+}

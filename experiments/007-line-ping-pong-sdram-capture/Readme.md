@@ -120,12 +120,22 @@ Current DE10-Nano / MiSTer Quartus measurements for the two passing backends:
 | Backend | ALMs | Registers | Block memory bits | SDRAM Fmax | Worst SDRAM setup slack | SDRAM output setup slack |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | custom | 8,182 | 12,374 | 425,217 | 86.73 MHz | -1.530 ns | +1.958 ns |
-| agg23-bl8-write | 7,401 | 11,827 | 425,217 | 113.40 MHz | -0.237 ns | +1.958 ns |
+| agg23-bl8-write | 7,398 | 11,807 | 425,217 | 110.62 MHz | +0.960 ns | +1.958 ns |
 
 The custom backend also includes a local output-enable timing experiment: the
 SDRAM DQ output-enable register is replicated per bit and packed into the fast
 I/O output-enable registers. Quartus confirms this in the fitter report, but
 the internal SDRAM clock domain still fails setup.
+
+The `agg23-bl8-write` backend is timing-clean at 100 MHz after synchronizing
+the external reset into the SDRAM clock domain. The previous `-0.237 ns` setup
+miss was a reset crossing from `reset_req` into BL8 SDRAM output/control
+registers, not a functional write datapath problem.
+
+For hardware testing, load `output_files/Template-agg23-bl8-write.rbf`. The
+expected output is the animated deterministic 720p pattern. `LED_USER` remains
+the sticky hardware indication for reuse-before-drain or backend diagnostic
+errors.
 
 The experiment targets the existing DE10-Nano / MiSTer template setup and keeps
 the physical 720p raster timing from `raster_720p`.
