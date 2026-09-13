@@ -93,6 +93,7 @@ BACKEND=custom ./build.sh
 BACKEND=agg23-word ./build.sh
 BACKEND=agg23-burst ./build.sh
 BACKEND=agg23-bl8-write ./build.sh
+BACKEND=007-bl8-hwtest ./build.sh
 BACKEND=all ./build.sh
 ```
 
@@ -132,10 +133,40 @@ the external reset into the SDRAM clock domain. The previous `-0.237 ns` setup
 miss was a reset crossing from `reset_req` into BL8 SDRAM output/control
 registers, not a functional write datapath problem.
 
-For hardware testing, load `output_files/Template-agg23-bl8-write.rbf`. The
-expected output is the animated deterministic 720p pattern. `LED_USER` remains
-the sticky hardware indication for reuse-before-drain or backend diagnostic
-errors.
+## Hardware test
+
+Build the dedicated hardware-test bitstream with:
+
+```bash
+BACKEND=007-bl8-hwtest ./build.sh
+```
+
+Load `output_files/Template-007-bl8-hwtest.rbf`.
+
+Expected HDMI output is a stable animated 720p deterministic pattern with
+visible horizontal, vertical, and frame-dependent variation. `LED_USER` is solid
+after SDRAM initialization. If `LED_USER` flashes, a sticky reuse-before-drain
+or backend diagnostic error occurred.
+
+PASS:
+
+- stable HDMI output with the expected animated pattern;
+- no obvious tearing, stale repeated lines, or corrupt line artifacts;
+- output continues indefinitely;
+- `LED_USER` remains solid after initialization.
+
+FAIL:
+
+- unstable or corrupt HDMI output;
+- periodic stale-line or tearing artifacts;
+- output stops or loses sync;
+- `LED_USER` flashes.
+
+Current hardware-test build measurements:
+
+| RBF | ALMs | Registers | Block memory bits | SDRAM Fmax | Worst SDRAM setup slack | SDRAM output setup slack | Worst line drain |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Template-007-bl8-hwtest.rbf | 7,398 | 11,807 | 425,217 | 110.62 MHz | +0.960 ns | +1.958 ns | 2751 cycles |
 
 The experiment targets the existing DE10-Nano / MiSTer template setup and keeps
 the physical 720p raster timing from `raster_720p`.
