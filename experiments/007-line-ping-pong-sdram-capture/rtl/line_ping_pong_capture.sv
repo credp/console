@@ -82,9 +82,10 @@ module line_ping_pong_capture #(
 
     wire [ADDR_WIDTH-1:0] video_addr = video_x[ADDR_WIDTH-1:0];
     logic [15:0] video_pixel_next;
+    logic [ADDR_WIDTH-1:0] cap_read_index;
 
     always_comb begin
-        if (!video_de || video_x >= 11'd1280 || !line_valid) begin
+        if (!video_de || video_x >= 11'd1280 || video_y >= 10'd720 || !line_valid) begin
             video_pixel_next = 16'h0000;
         end else if (display_buffer == 1'b0) begin
             video_pixel_next = line0[video_addr];
@@ -109,8 +110,9 @@ module line_ping_pong_capture #(
     always_comb begin
         req_valid = (cap_state == CAP_REQ);
         write_valid = (cap_state == CAP_WRITE);
-        if (cap_buffer == 1'b0) write_data = line0[cap_chunk * CHUNK_WORDS + cap_word];
-        else write_data = line1[cap_chunk * CHUNK_WORDS + cap_word];
+        cap_read_index = ADDR_WIDTH'(cap_chunk * CHUNK_WORDS) + cap_word;
+        if (cap_buffer == 1'b0) write_data = line0[cap_read_index];
+        else write_data = line1[cap_read_index];
     end
 
     always_ff @(posedge clk) begin
