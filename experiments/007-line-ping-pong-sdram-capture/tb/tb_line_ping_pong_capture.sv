@@ -39,7 +39,8 @@ module tb_line_ping_pong_capture;
     assign sdram_dq_in = dq;
 
     line_ping_pong_capture dut (
-        .clk, .reset(reset | ~init_done),
+        .clk_source(clk), .reset_source(reset | ~init_done),
+        .clk_video(clk), .reset_video(reset | ~init_done),
         .video_x, .video_y, .video_de, .video_pixel, .video_buffer,
         .req_valid, .req_ready, .req_write, .req_byte_address, .req_words, .req_tag,
         .write_valid, .write_ready, .write_data, .write_byte_enable,

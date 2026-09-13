@@ -23,7 +23,7 @@ test: build/tb_line_ping_pong_capture.vvp
 
 build/tb_line_ping_pong_capture.vvp: rtl/line_ping_pong_capture.sv $(SDRAM_RTL) ../../rtl/scanout-sdram-controller/tb/pin-model/sdram_pair_model.sv tb/tb_line_ping_pong_capture.sv
 	mkdir -p build
-	$(IVERILOG) -g2012 -Wall -s tb_line_ping_pong_capture -o $@ $^
+	$(IVERILOG) -g2012 -Wall -DSIMULATION -s tb_line_ping_pong_capture -o $@ $^
 
 clean:
 	rm -rf build

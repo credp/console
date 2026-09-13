@@ -8,14 +8,14 @@
 module pll (
 		input  wire  refclk,   //  refclk.clk
 		input  wire  rst,      //   reset.reset
-		output wire  outclk_0, // outclk0.clk
+		output wire  outclk_0, // 720p pixel clock
 		output wire  locked    //  locked.export
 	);
 
 	pll_0002 pll_inst (
 		.refclk   (refclk),   //  refclk.clk
 		.rst      (rst),      //   reset.reset
-		.outclk_0 (outclk_0), // outclk0.clk
+		.outclk_0 (outclk_0),
 		.locked   (locked)    //  locked.export
 	);
 

@@ -110,6 +110,10 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 ///////////////////////   CLOCKS   ///////////////////////////////
 
 wire clk_sys;
+wire clk_sdram;
+wire clk_capture;
+wire pll_locked;
+wire sdram_pll_locked;
 pll pll
 (
 	.refclk(CLK_50M),
@@ -118,8 +122,16 @@ pll pll
 	.locked(pll_locked)
 );
 
-wire pll_locked;
-wire reset = RESET | status[0] | buttons[1] | ~pll_locked;
+sdram_pll sdram_pll_inst
+(
+	.refclk(CLK_50M),
+	.rst(0),
+	.outclk_0(clk_sdram),
+	.outclk_1(clk_capture),
+	.locked(sdram_pll_locked)
+);
+
+wire reset = RESET | status[0] | buttons[1] | ~pll_locked | ~sdram_pll_locked;
 
 wire [1:0] col = status[4:3];
 
@@ -182,8 +194,10 @@ wire [15:0] current_line_drain_cycles;
 
 line_ping_pong_capture line_source
 (
-	.clk(clk_sys),
-	.reset(reset_core | ~sdram_init_done),
+	.clk_source(clk_sdram),
+	.reset_source(reset | ~sdram_init_done),
+	.clk_video(clk_sys),
+	.reset_video(reset_core),
 	.video_x(x),
 	.video_y(y),
 	.video_de(de_raw),
@@ -224,7 +238,7 @@ reg phy_sdram_dqml, phy_sdram_dqmh, phy_sdram_dq_oe;
 reg [15:0] phy_sdram_dq_out;
 reg [15:0] phy_sdram_dq_in;
 
-always @(posedge clk_sys) begin
+always @(posedge clk_sdram) begin
 	phy_sdram_a <= core_sdram_a;
 	phy_sdram_ba <= core_sdram_ba;
 	phy_sdram_cke <= core_sdram_cke;
@@ -236,8 +250,11 @@ always @(posedge clk_sys) begin
 	phy_sdram_dqmh <= core_sdram_dqmh;
 	phy_sdram_dq_oe <= core_sdram_dq_oe;
 	phy_sdram_dq_out <= core_sdram_dq_out;
-	phy_sdram_dq_in <= SDRAM_DQ;
 end
+
+// Keep the capture register adjacent to the top-level pin.  006.a found that
+// a half-cycle shifted capture clock matters for the external SDRAM DQ path.
+always @(posedge clk_capture) phy_sdram_dq_in <= SDRAM_DQ;
 
 assign SDRAM_A = phy_sdram_a;
 assign SDRAM_BA = phy_sdram_ba;
@@ -254,13 +271,13 @@ altddio_out #(.extend_oe_disable("OFF"),.intended_device_family("Cyclone V"),
 	.invert_output("OFF"),.lpm_hint("UNUSED"),.lpm_type("altddio_out"),
 	.oe_reg("UNREGISTERED"),.power_up_high("OFF"),.width(1)) sdramclk_ddr
 (
-	.datain_h(1'b0),.datain_l(1'b1),.outclock(clk_sys),.dataout(SDRAM_CLK),
+	.datain_h(1'b0),.datain_l(1'b1),.outclock(clk_sdram),.dataout(SDRAM_CLK),
 	.aclr(1'b0),.aset(1'b0),.oe(1'b1),.outclocken(1'b1),.sclr(1'b0),.sset(1'b0)
 );
 
-sdram_single_client_controller #(.SDRAM_FREQ_HZ(74_250_000), .MAX_REQUEST_WORDS(1280)) sdram_capture
+sdram_single_client_controller #(.SDRAM_FREQ_HZ(100_000_000), .MAX_REQUEST_WORDS(1280)) sdram_capture
 (
-	.clk(clk_sys), .reset(reset_core),
+	.clk(clk_sdram), .reset(reset),
 	.req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
 	.req_byte_address(req_byte_address), .req_words(req_words), .req_tag(req_tag),
 	.write_valid(write_valid), .write_ready(write_ready), .write_data(write_data),
