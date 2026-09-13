@@ -1,0 +1,71 @@
+# Experiment 007: two-line ping-pong capture
+
+This experiment is a small hardware prototype derived from experiment 003.
+It keeps the 1280x720 HDMI raster path and replaces the preloaded PPM BRAM
+image with a deterministic generated source line.
+
+## Topology
+
+```text
+deterministic pixel generator
+        |
+        v
+two 1280 x 16-bit BRAM line buffers
+        |
+        +--> completed line to HDMI presentation
+        |
+        +--> completed line to SDRAM write/capture
+```
+
+Only two line buffers are used. One buffer is filled while the other contains
+the most recently completed line. At line completion the roles swap. The
+completed line is displayed from BRAM and submitted once to SDRAM as one
+sequential 1280-word write request through `sdram_single_client_controller`.
+
+The pattern is a simple function of X, Y, and frame count. It is meant to make
+stale or corrupted line reuse visible, not to be pretty.
+
+The source line cadence is intentionally slower than the HDMI line cadence:
+one 1280-pixel source line is completed every 4096 pixel-clock cycles. HDMI may
+therefore read the same completed source line more than once while SDRAM drains,
+which is the specific slack condition this prototype is meant to expose.
+
+## Instrumentation
+
+`line_ping_pong_capture` exposes:
+
+- `source_lines_generated`
+- `sdram_lines_submitted`
+- `sdram_lines_completed`
+- `reuse_before_drain_error`
+- `worst_line_drain_cycles`
+- `current_line_drain_cycles`
+
+On hardware, `LED_USER` is solid once SDRAM initialization completes and flashes
+if `reuse_before_drain_error` is set.
+
+## Simulation
+
+Run:
+
+```bash
+cd experiments/007-line-ping-pong-sdram-capture
+make test
+```
+
+The test uses the actual RTL SDRAM controller path with the repo's SDRAM pair
+model. It checks buffer alternation, deterministic presented data, one SDRAM
+request per completed line, request/completion matching, and no buffer reuse
+before drain in the tested configuration.
+
+## Build
+
+Build like the earlier experiments:
+
+```bash
+cd experiments/007-line-ping-pong-sdram-capture
+./build.sh
+```
+
+The experiment targets the existing DE10-Nano / MiSTer template setup and keeps
+the physical 720p raster timing from `raster_720p`.
