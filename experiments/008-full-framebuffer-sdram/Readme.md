@@ -170,6 +170,13 @@ A future 74.25 MHz scanout clock must be added and verified separately before
 calling this output 720p60; it will also need an explicit clock-domain boundary
 between SDRAM reading and scanout.
 
+The experiment-003 image was also a 64x64 BRAM tile addressed with wrapped
+coordinates, rather than a native-resolution framebuffer. It appeared about
+five times across the 1280-pixel active width (a 4x horizontal enlargement) and
+roughly two and a half to three times down the 720-pixel height. That hardware
+test established basic direct-video signalling, but did not validate 1:1 pixel
+geometry, native-resolution addressing, or a 720p60 pixel clock.
+
 `Template.sv` connects this producer-only path to the physical SDRAM at the
 142.857 MHz command-clock point characterized in experiment 006.a. The old
 20 MHz test video remains independent; no framebuffer consumer or HDMI

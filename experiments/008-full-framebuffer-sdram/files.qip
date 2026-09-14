@@ -7,6 +7,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_line_write_sequen
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_producer_write_path.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_producer_write_path_dual_clock.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_consumer_lines.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_consumer_lines_dual_clock.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_line_read_sequencer.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_consumer_read_path.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_consumer_line_scheduler.sv

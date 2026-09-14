@@ -4,7 +4,7 @@ VERILATOR ?= verilator
 
 .PHONY: test test-one-shot-handoff test-agg23-burst-cache test-agg23-read-backend test-producer-bl8 test-producer-bl8-refresh test-producer-bl8-capacity test-producer-bl8-chunks waveform clean
 
-test: build/tb_framebuffer_pattern_pixel.vvp build/tb_framebuffer_machine_line_source.vvp build/tb_framebuffer_line_chunk_address.vvp build/tb_framebuffer_producer_lines.vvp build/tb_framebuffer_line_write_sequencer.vvp build/tb_framebuffer_producer_write_path.vvp build/tb_framebuffer_consumer_lines.vvp build/tb_framebuffer_line_read_sequencer.vvp build/tb_framebuffer_consumer_line_scheduler.vvp build/tb_framebuffer_scanout_timing_adapter.vvp build/tb_framebuffer_write_read_path.vvp
+test: build/tb_framebuffer_pattern_pixel.vvp build/tb_framebuffer_machine_line_source.vvp build/tb_framebuffer_line_chunk_address.vvp build/tb_framebuffer_producer_lines.vvp build/tb_framebuffer_line_write_sequencer.vvp build/tb_framebuffer_producer_write_path.vvp build/tb_framebuffer_consumer_lines.vvp build/tb_framebuffer_consumer_lines_dual_clock.vvp build/tb_framebuffer_line_read_sequencer.vvp build/tb_framebuffer_consumer_line_scheduler.vvp build/tb_framebuffer_scanout_timing_adapter.vvp build/tb_framebuffer_write_read_path.vvp
 	$(VVP) $<
 	$(VVP) build/tb_framebuffer_machine_line_source.vvp
 	$(VVP) build/tb_framebuffer_line_chunk_address.vvp
@@ -12,6 +12,7 @@ test: build/tb_framebuffer_pattern_pixel.vvp build/tb_framebuffer_machine_line_s
 	$(VVP) build/tb_framebuffer_line_write_sequencer.vvp
 	$(VVP) build/tb_framebuffer_producer_write_path.vvp
 	$(VVP) build/tb_framebuffer_consumer_lines.vvp
+	$(VVP) build/tb_framebuffer_consumer_lines_dual_clock.vvp
 	$(VVP) build/tb_framebuffer_line_read_sequencer.vvp
 	$(VVP) build/tb_framebuffer_consumer_line_scheduler.vvp
 	$(VVP) build/tb_framebuffer_scanout_timing_adapter.vvp
@@ -70,6 +71,10 @@ build/tb_framebuffer_producer_write_path.vvp: rtl/framebuffer_pattern_pixel.sv r
 build/tb_framebuffer_consumer_lines.vvp: rtl/framebuffer_consumer_lines.sv tb/tb_framebuffer_consumer_lines.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_consumer_lines -o $@ $^
+
+build/tb_framebuffer_consumer_lines_dual_clock.vvp: rtl/framebuffer_consumer_lines_dual_clock.sv tb/tb_framebuffer_consumer_lines_dual_clock.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_consumer_lines_dual_clock -o $@ $^
 
 build/tb_framebuffer_line_read_sequencer.vvp: rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_line_read_sequencer.sv tb/tb_framebuffer_line_read_sequencer.sv
 	mkdir -p build
