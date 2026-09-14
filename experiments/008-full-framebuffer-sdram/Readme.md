@@ -122,6 +122,11 @@ write boundaries. `tb_framebuffer_producer_bl8_write_backend` directly
 connects the producer to it and the SDRAM pin model. The backend is listed for
 Quartus but is not yet connected to the experiment's hardware top level.
 
+`framebuffer_producer_bl8_sdram_path` is the synthesizable producer-side
+composition. It holds the producer in reset until SDRAM initialisation has
+completed, exposes a write-completion pulse for instrumentation, and owns the
+physical SDRAM pins.
+
 Run its simulation with:
 
 ```bash

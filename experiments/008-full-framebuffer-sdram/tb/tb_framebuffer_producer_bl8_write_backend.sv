@@ -16,24 +16,9 @@ module tb_framebuffer_producer_bl8_write_backend #(
 
     logic clk = 1'b0;
     logic reset = 1'b1;
-    logic producer_reset;
     logic init_done;
     logic backend_error;
-    logic req_valid;
-    logic req_ready;
-    logic req_write;
-    logic [26:0] req_byte_address;
-    logic [15:0] req_words;
-    logic [7:0] req_tag;
-    logic write_valid;
-    logic write_ready;
-    logic [15:0] write_data;
-    logic [1:0] write_byte_enable;
-    logic completion_valid;
-    logic completion_ready;
-    logic [7:0] completion_tag;
-    logic [15:0] completion_words;
-    logic completion_error;
+    logic write_completion;
     logic [10:0] producer_pixel_x;
     logic [9:0] producer_line_y;
     logic [7:0] producer_frame_index;
@@ -62,78 +47,31 @@ module tb_framebuffer_producer_bl8_write_backend #(
     logic saw_producer_stall;
 
     always #5 clk = !clk;
-    assign producer_reset = reset || !init_done;
-
-    framebuffer_producer_write_path #(
+    framebuffer_producer_bl8_sdram_path #(
         .FRAMEBUFFER_WIDTH(TEST_WIDTH),
         .FRAMEBUFFER_HEIGHT(TEST_HEIGHT),
         .LINE_ADDR_WIDTH(TEST_ADDR_WIDTH),
-        .WRITE_CHUNK_WORDS(TEST_CHUNK_WORDS)
-    ) producer (
+        .WRITE_CHUNK_WORDS(TEST_CHUNK_WORDS),
+        .SDRAM_FREQ_HZ(100_000_000),
+        .SDRAM_POWERUP_US(1),
+        .REFRESH_INTERVAL_CYCLES(REFRESH_INTERVAL_CYCLES)
+    ) dut (
         .clk(clk),
-        .reset(producer_reset),
-        .req_valid(req_valid),
-        .req_ready(req_ready),
-        .req_write(req_write),
-        .req_byte_address(req_byte_address),
-        .req_words(req_words),
-        .req_tag(req_tag),
-        .write_valid(write_valid),
-        .write_ready(write_ready),
-        .write_data(write_data),
-        .write_byte_enable(write_byte_enable),
-        .completion_valid(completion_valid),
-        .completion_ready(completion_ready),
-        .completion_tag(completion_tag),
-        .completion_words(completion_words),
-        .completion_error(completion_error),
+        .reset(reset),
+        .sdram_init_done(init_done),
+        .sdram_error(backend_error),
+        .write_completion(write_completion),
         .producer_pixel_x(producer_pixel_x),
         .producer_line_y(producer_line_y),
         .producer_frame_index(producer_frame_index),
         .producer_stalled_waiting_for_free_line(producer_stalled_waiting_for_free_line),
         .producer_stalled_waiting_for_writer(producer_stalled_waiting_for_writer),
         .writer_busy(writer_busy),
-        .writer_error(writer_error)
-    );
-
-    framebuffer_bl8_write_backend #(
-        .SDRAM_FREQ_HZ(100_000_000),
-        .POWERUP_US(1),
-        .REFRESH_INTERVAL_CYCLES(REFRESH_INTERVAL_CYCLES)
-    ) backend (
-        .clk(clk),
-        .reset(reset),
-        .req_valid(req_valid),
-        .req_ready(req_ready),
-        .req_write(req_write),
-        .req_byte_address(req_byte_address),
-        .req_words(req_words),
-        .req_tag(req_tag),
-        .write_valid(write_valid),
-        .write_ready(write_ready),
-        .write_data(write_data),
-        .write_byte_enable(write_byte_enable),
-        .read_valid(),
-        .read_ready(1'b1),
-        .read_data(),
-        .completion_valid(completion_valid),
-        .completion_ready(completion_ready),
-        .completion_tag(completion_tag),
-        .completion_words(completion_words),
-        .completion_error(completion_error),
-        .init_done(init_done),
-        .diagnostic_error(backend_error),
-        .SDRAM_A(sdram_a),
-        .SDRAM_BA(sdram_ba),
-        .SDRAM_CKE(sdram_cke),
-        .SDRAM_nCS(sdram_ncs),
-        .SDRAM_nRAS(sdram_nras),
-        .SDRAM_nCAS(sdram_ncas),
-        .SDRAM_nWE(sdram_nwe),
-        .SDRAM_DQML(sdram_dqml),
-        .SDRAM_DQMH(sdram_dqmh),
-        .SDRAM_DQ(sdram_dq),
-        .SDRAM_CLK(sdram_clk)
+        .writer_error(writer_error),
+        .SDRAM_A(sdram_a), .SDRAM_BA(sdram_ba), .SDRAM_CKE(sdram_cke),
+        .SDRAM_nCS(sdram_ncs), .SDRAM_nRAS(sdram_nras), .SDRAM_nCAS(sdram_ncas),
+        .SDRAM_nWE(sdram_nwe), .SDRAM_DQML(sdram_dqml), .SDRAM_DQMH(sdram_dqmh),
+        .SDRAM_DQ(sdram_dq), .SDRAM_CLK(sdram_clk)
     );
 
     sdram_pair_model memory (
@@ -172,13 +110,13 @@ module tb_framebuffer_producer_bl8_write_backend #(
     endfunction
 
     always_ff @(posedge clk) begin
-        if (producer_reset) begin
+        if (reset || !init_done) begin
             completion_count <= 0;
             saw_producer_stall <= 1'b0;
             producer_stall_cycle_count <= 0;
             runtime_refresh_count <= 0;
         end else begin
-            if (completion_valid && completion_ready)
+            if (write_completion)
                 completion_count <= completion_count + 1;
             if (producer_stalled_waiting_for_free_line || producer_stalled_waiting_for_writer) begin
                 saw_producer_stall <= 1'b1;
@@ -202,9 +140,8 @@ module tb_framebuffer_producer_bl8_write_backend #(
         wait(completion_count == COMPLETIONS_TO_CHECK);
         repeat (20) @(posedge clk);
 
-        if (writer_error || backend_error || completion_error) begin
-            $fatal(1, "write error writer=%b backend=%b completion=%b",
-                   writer_error, backend_error, completion_error);
+        if (writer_error || backend_error) begin
+            $fatal(1, "write error writer=%b backend=%b", writer_error, backend_error);
         end
 
         for (line_index = 0; line_index < TEST_HEIGHT; line_index = line_index + 1) begin
