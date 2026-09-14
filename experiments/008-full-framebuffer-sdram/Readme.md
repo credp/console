@@ -95,12 +95,34 @@ The first implemented blocks are:
 - `framebuffer_line_read_sequencer`, a consumer-side line fill sequencer that
   emits fixed-size read chunks and turns returned read data into the fill
   stream. It still talks to a fake read source in simulation.
+- `framebuffer_consumer_read_path`, the matching thin composition of the read
+  sequencer and consumer line buffers;
+- `framebuffer_consumer_line_scheduler`, the explicit owner of consumer line
+  order. It prefetches the next framebuffer line and only permits the scanout
+  line transition after that fill is complete;
+- `framebuffer_transfer_statistics`, a separate machine-state block that owns
+  saturating cycle counters. Producer idle means its write sequencer is idle;
+  consumer idle means its read sequencer is idle. Producer stall combines a
+  completed line waiting for the writer with both producer line buffers being
+  occupied; consumer stall means its completed line is waiting for scanout to
+  release the output buffer.
+
+`tb_framebuffer_write_read_path` joins the producer and consumer request ports
+to one simulated linear memory. It verifies every pixel after the round trip;
+it is a simulation integration point, not the future SDRAM controller.
 
 Run its simulation with:
 
 ```bash
 cd experiments/008-full-framebuffer-sdram
 make test
+```
+
+To run only the joined write/read test and produce its GTKWave-compatible VCD:
+
+```bash
+make waveform
+gtkwave build/framebuffer_write_read_path.vcd
 ```
 
 ## Upstream template notes

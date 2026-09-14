@@ -23,7 +23,8 @@ module framebuffer_producer_lines #(
     output logic [10:0]                  producer_x,
     output logic [9:0]                   producer_y,
     output logic [7:0]                   frame_index,
-    output logic                         stalled_waiting_for_free_line
+    output logic                         stalled_waiting_for_free_line,
+    output logic                         stalled_waiting_for_writer
 );
     typedef enum logic [1:0] {
         PRODUCER_RESET,
@@ -63,6 +64,7 @@ module framebuffer_producer_lines #(
 
     assign next_working_buffer_free = !buffer_owned_by_writer[!working_buffer];
     assign stalled_waiting_for_free_line = (state == PRODUCER_WAIT_FOR_FREE_LINE);
+    assign stalled_waiting_for_writer = (state == PRODUCER_HAND_OFF_LINE) && !line_ready_accept;
     assign machine_produce_pixel = (state == PRODUCER_FILL_LINE);
 
     assign line_ready_valid = (state == PRODUCER_HAND_OFF_LINE);

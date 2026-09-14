@@ -31,6 +31,7 @@ module framebuffer_producer_write_path #(
     output logic [9:0]  producer_line_y,
     output logic [7:0]  producer_frame_index,
     output logic        producer_stalled_waiting_for_free_line,
+    output logic        producer_stalled_waiting_for_writer,
     output logic        writer_busy,
     output logic        writer_error
 );
@@ -63,7 +64,8 @@ module framebuffer_producer_write_path #(
         .producer_x(producer_pixel_x),
         .producer_y(producer_line_y),
         .frame_index(producer_frame_index),
-        .stalled_waiting_for_free_line(producer_stalled_waiting_for_free_line)
+        .stalled_waiting_for_free_line(producer_stalled_waiting_for_free_line),
+        .stalled_waiting_for_writer(producer_stalled_waiting_for_writer)
     );
 
     framebuffer_line_write_sequencer #(
