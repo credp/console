@@ -115,6 +115,11 @@ The first implemented blocks are:
 to one simulated linear memory. It verifies every pixel after the round trip;
 it is a simulation integration point, not the future SDRAM controller.
 
+`tb_framebuffer_producer_bl8_write_backend` directly connects the producer to
+the proven experiment 007 BL8 write backend and SDRAM pin model. It is a
+compatibility test only: experiment 008 does not yet include that backend in
+its synthesizable source list.
+
 Run its simulation with:
 
 ```bash
@@ -127,6 +132,13 @@ To run only the joined write/read test and produce its GTKWave-compatible VCD:
 ```bash
 make waveform
 gtkwave build/framebuffer_write_read_path.vcd
+```
+
+To run the physical BL8 write compatibility test and inspect its waveform:
+
+```bash
+make test-producer-bl8
+gtkwave build/framebuffer_producer_bl8_write_backend.vcd
 ```
 
 ## Upstream template notes
