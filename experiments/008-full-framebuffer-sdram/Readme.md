@@ -83,7 +83,10 @@ The first implemented blocks are:
   the first hardware build can use whole-line writes or smaller chunks without
   changing the ownership logic. This block converts framebuffer coordinates
   into linear byte addresses; SDRAM chip/bank/row/column mapping belongs below
-  the request interface.
+  the request interface;
+- `framebuffer_producer_write_path`, a thin composition of the producer line
+  buffers and chunked write sequencer. It is still tested against a fake sink,
+  not real SDRAM.
 
 Run its simulation with:
 
