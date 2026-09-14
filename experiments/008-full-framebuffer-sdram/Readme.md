@@ -88,7 +88,10 @@ The first implemented blocks are:
   the request interface;
 - `framebuffer_producer_write_path`, a thin composition of the producer line
   buffers and chunked write sequencer. It is still tested against a fake sink,
-  not real SDRAM.
+  not real SDRAM;
+- `framebuffer_consumer_lines`, a consumer-side two-line prototype. It fills
+  one line from a stream, exposes only completed lines to scanout, and stalls
+  instead of overwriting an output line that has not advanced.
 
 Run its simulation with:
 
