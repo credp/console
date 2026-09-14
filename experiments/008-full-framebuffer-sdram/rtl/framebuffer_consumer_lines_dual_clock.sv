@@ -60,8 +60,15 @@ module framebuffer_consumer_lines_dual_clock #(
 
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *) logic display_valid_sync_1;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *) logic display_valid_sync_2;
+    // These payloads are stable before their corresponding valid/toggle
+    // handshake is observed. Register them locally before consuming them so
+    // the scanout side never samples fill-clock state directly.
+    logic display_buffer_sync_1, display_buffer_sync_2;
+    logic [9:0] display_line_y_sync_1, display_line_y_sync_2;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *) logic pending_toggle_sync_1;
     (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS" *) logic pending_toggle_sync_2;
+    logic pending_buffer_sync_1, pending_buffer_sync_2;
+    logic [9:0] pending_line_y_sync_1, pending_line_y_sync_2;
     logic pending_seen_scanout;
     logic current_buffer_scanout;
     logic [9:0] current_line_y_scanout;
@@ -148,8 +155,16 @@ module framebuffer_consumer_lines_dual_clock #(
         if (scanout_reset) begin
             display_valid_sync_1 <= 1'b0;
             display_valid_sync_2 <= 1'b0;
+            display_buffer_sync_1 <= 1'b0;
+            display_buffer_sync_2 <= 1'b0;
+            display_line_y_sync_1 <= '0;
+            display_line_y_sync_2 <= '0;
             pending_toggle_sync_1 <= 1'b0;
             pending_toggle_sync_2 <= 1'b0;
+            pending_buffer_sync_1 <= 1'b0;
+            pending_buffer_sync_2 <= 1'b0;
+            pending_line_y_sync_1 <= '0;
+            pending_line_y_sync_2 <= '0;
             pending_seen_scanout <= 1'b0;
             current_buffer_scanout <= 1'b0;
             current_line_y_scanout <= '0;
@@ -164,19 +179,27 @@ module framebuffer_consumer_lines_dual_clock #(
         end else begin
             display_valid_sync_1 <= display_valid_fill;
             display_valid_sync_2 <= display_valid_sync_1;
+            display_buffer_sync_1 <= display_buffer_fill;
+            display_buffer_sync_2 <= display_buffer_sync_1;
+            display_line_y_sync_1 <= display_line_y_fill;
+            display_line_y_sync_2 <= display_line_y_sync_1;
             pending_toggle_sync_1 <= pending_publish_toggle;
             pending_toggle_sync_2 <= pending_toggle_sync_1;
+            pending_buffer_sync_1 <= pending_buffer_fill;
+            pending_buffer_sync_2 <= pending_buffer_sync_1;
+            pending_line_y_sync_1 <= pending_line_y_fill;
+            pending_line_y_sync_2 <= pending_line_y_sync_1;
 
             if (pending_arrived) begin
                 pending_seen_scanout <= pending_toggle_sync_2;
-                next_buffer_scanout <= pending_buffer_fill;
-                next_line_y_scanout <= pending_line_y_fill;
+                next_buffer_scanout <= pending_buffer_sync_2;
+                next_line_y_scanout <= pending_line_y_sync_2;
                 next_valid_scanout <= 1'b1;
             end
 
             if (scanout_start && display_valid_sync_2 && next_valid_scanout) begin
-                current_buffer_scanout <= display_buffer_fill;
-                current_line_y_scanout <= display_line_y_fill;
+                current_buffer_scanout <= display_buffer_sync_2;
+                current_line_y_scanout <= display_line_y_sync_2;
                 current_valid_scanout <= 1'b1;
             end
 

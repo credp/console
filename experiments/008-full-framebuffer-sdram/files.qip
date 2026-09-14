@@ -19,6 +19,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_one_shot_handoff.
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_sdram_pin_mux.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_sdram_clock_forward.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_sdram_phy.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_debug_overlay.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/raster_720p.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_scanout_timing_adapter.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_bl8_write_backend.sv

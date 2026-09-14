@@ -137,7 +137,7 @@ module framebuffer_producer_bl8_sdram_path #(
     // asserted for the one-shot handoff, which observes it from machine_clk.
     // A one-sdram-clock pulse would be too short to cross that boundary.
     always_ff @(posedge sdram_clk) begin
-        if (reset) begin
+        if (sdram_reset_sync) begin
             frame_write_complete_latched <= 1'b0;
         end else if (line_write_complete &&
                      line_write_complete_y == 10'(FRAMEBUFFER_HEIGHT - 1)) begin

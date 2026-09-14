@@ -59,7 +59,7 @@ localparam CONF_STR = {
 	"-;",
 	"O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"O[2],TV Mode,NTSC,PAL;",
-	"O[4:3],Noise,White,Red,Green,Blue;",
+	"O[3],Video source,Framebuffer,Raster test;",
 	"-;",
 	"P1,Test Page 1;",
 	"P1-;",
@@ -110,22 +110,24 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 wire clk_sys;
 wire clk_sdram;
+wire clk_sdram_capture;
+wire clk_video;
 wire sdram_pll_locked;
 pll pll
 (
 	.refclk(CLK_50M),
 	.rst(0),
-	.outclk_0(clk_sys)
+	.outclk_0(clk_sys), .outclk_1(clk_video)
 );
 
 // Experiment 006.a characterized this command-clock point with an inverted
-// forwarded SDRAM clock. Scanout remains on the existing 20 MHz framework
-// clock while the producer constructs the SDRAM framebuffer independently.
+// forwarded SDRAM clock. Scanout uses the second output of the existing core
+// PLL, leaving this PLL dedicated to SDRAM command and capture timing.
 framebuffer_sdram_pll sdram_pll
 (
 	.refclk(CLK_50M),
 	.rst(0),
-	.outclk(clk_sdram),
+	.outclk(clk_sdram), .capture_clk(clk_sdram_capture),
 	.locked(sdram_pll_locked)
 );
 
@@ -181,13 +183,13 @@ framebuffer_producer_bl8_sdram_path #(
 // ownership rule.
 reg sdram_reset_sync_meta, sdram_reset_sync;
 always @(posedge clk_sdram) begin
-	if (reset) begin
+	if (reset)
 		sdram_reset_sync_meta <= 1'b1;
-		sdram_reset_sync <= 1'b1;
-	end else begin
+	else
 		sdram_reset_sync_meta <= 1'b0;
-		sdram_reset_sync <= sdram_reset_sync_meta;
-	end
+	// Only the first stage observes the asynchronous framework reset. The
+	// second stage must remain a normal, timed synchronizer register.
+	sdram_reset_sync <= sdram_reset_sync_meta;
 end
 
 wire producer_owns_sdram, reader_reset, reader_owns_sdram, framebuffer_ready_sdram;
@@ -212,11 +214,20 @@ wire [26:0] reader_req_byte_address;
 wire [15:0] reader_req_words, reader_read_data, reader_completion_words;
 wire [7:0] reader_req_tag, reader_completion_tag;
 wire reader_completion_valid, reader_completion_ready, reader_completion_error;
+reg [15:0] debug_writer_count, debug_reader_count, debug_error_count;
+always @(posedge clk_sdram) begin
+	if (sdram_reset_sync) begin debug_writer_count<=0; debug_reader_count<=0; debug_error_count<=0; end
+	else begin
+		if (write_completion && &debug_writer_count==0) debug_writer_count <= debug_writer_count + 1'd1;
+		if (reader_completion_valid && reader_completion_ready && &debug_reader_count==0) debug_reader_count <= debug_reader_count + 1'd1;
+		if (reader_completion_valid && reader_completion_ready && reader_completion_error && &debug_error_count==0) debug_error_count <= debug_error_count + 1'd1;
+	end
+end
 
 // Scanout and the user LED are the only consumers outside clk_sdram of the
 // one-shot completion flag. Keep that crossing away from SDRAM pin control.
 reg framebuffer_ready_sync_meta, framebuffer_ready;
-always @(posedge clk_sys) begin
+always @(posedge clk_video) begin
 	if (reset) begin
 		framebuffer_ready_sync_meta <= 1'b0;
 		framebuffer_ready <= 1'b0;
@@ -245,7 +256,7 @@ wire [10:0] raster_x;
 wire [9:0] raster_y;
 wire raster_de, raster_hsync, raster_vsync, raster_frame_start;
 raster_720p raster (
-	.clk(clk_sys), .reset(reset), .x(raster_x), .y(raster_y), .de(raster_de),
+	.clk(clk_video), .reset(reset), .x(raster_x), .y(raster_y), .de(raster_de),
 	.hsync(raster_hsync), .vsync(raster_vsync), .frame_start(raster_frame_start),
 	.de_raw(), .hsync_raw(), .vsync_raw()
 );
@@ -254,11 +265,65 @@ wire [15:0] scanout_pixel;
 wire scanout_pixel_valid, scanout_underflow, consumer_primed;
 wire [9:0] scanout_line_y;
 wire [15:0] scanout_skipped_lines;
+reg [15:0] debug_underflow_count;
+always @(posedge clk_video) begin
+	if (reset)
+		debug_underflow_count <= 0;
+	else if (scanout_underflow && &debug_underflow_count == 0)
+		debug_underflow_count <= debug_underflow_count + 1'd1;
+end
+
+// The overlay is sampled once per displayed frame. Synchronize the SDRAM
+// counters first so the frame-boundary snapshot never reads another domain
+// directly.
+reg [15:0] debug_writer_meta, debug_writer_sample;
+reg [15:0] debug_reader_meta, debug_reader_sample;
+reg [15:0] debug_error_meta, debug_error_sample;
+reg [15:0] debug_writer_sync, debug_reader_sync, debug_error_sync;
+always @(posedge clk_video) begin
+	if (reset) begin
+		debug_writer_meta <= 0; debug_writer_sample <= 0;
+		debug_reader_meta <= 0; debug_reader_sample <= 0;
+		debug_error_meta <= 0; debug_error_sample <= 0;
+		debug_writer_sync <= 0; debug_reader_sync <= 0; debug_error_sync <= 0;
+	end else begin
+		debug_writer_meta <= debug_writer_count;
+		debug_writer_sample <= debug_writer_meta;
+		debug_reader_meta <= debug_reader_count;
+		debug_reader_sample <= debug_reader_meta;
+		debug_error_meta <= debug_error_count;
+		debug_error_sample <= debug_error_meta;
+		if (raster_frame_start) begin
+			debug_writer_sync <= debug_writer_sample;
+			debug_reader_sync <= debug_reader_sample;
+			debug_error_sync <= debug_error_sample;
+		end
+	end
+end
+
+wire debug_override; wire [15:0] debug_pixel;
+framebuffer_debug_overlay debug_overlay(.x(raster_x),.y(raster_y),.active(raster_de),.writer_count(debug_writer_sync),.reader_count(debug_reader_sync),.error_count(debug_error_sync),.underflow_count(debug_underflow_count),.override(debug_override),.pixel(debug_pixel));
+// This switch isolates the core-to-HDMI raster path from SDRAM. The direct
+// source intentionally reuses the framebuffer's test pattern so a white edge
+// and the drifting interior have the same expected appearance in both modes.
+wire video_raster_test = status[3];
+reg [7:0] raster_test_frame_index;
+always @(posedge clk_video) begin
+	if (reset)
+		raster_test_frame_index <= '0;
+	else if (raster_frame_start)
+		raster_test_frame_index <= raster_test_frame_index + 1'b1;
+end
+wire [15:0] raster_test_pixel;
+framebuffer_pattern_pixel raster_test_pattern (
+	.x(raster_x), .y(raster_y), .frame_index(raster_test_frame_index),
+	.pixel(raster_test_pixel)
+);
 wire reader_busy, reader_error, consumer_waiting_for_output_release, consumer_overwrite_error;
 wire [9:0] next_framebuffer_line_y;
 wire scheduler_waiting_for_scanout, scheduler_timing_error;
 reg consumer_primed_sync_1, consumer_primed_sync_2, scanout_started;
-always @(posedge clk_sys) begin
+always @(posedge clk_video) begin
 	if (reset || !framebuffer_ready) begin
 		consumer_primed_sync_1 <= 0; consumer_primed_sync_2 <= 0; scanout_started <= 0;
 	end else begin
@@ -271,7 +336,7 @@ wire scanout_start = raster_frame_start && consumer_primed_sync_2 && !scanout_st
 
 framebuffer_consumer_read_path_dual_clock consumer (
 	.fill_clk(clk_sdram), .fill_reset(reader_reset_sdram | !reader_init_done),
-	.scanout_clk(clk_sys), .scanout_reset(reset | !framebuffer_ready),
+	.scanout_clk(clk_video), .scanout_reset(reset | !framebuffer_ready),
 	.scanout_start, .scanout_line_advance(raster_de && raster_x == 0 && raster_y != 0 && scanout_started),
 	.scanout_x(raster_x), .scanout_pixel, .scanout_pixel_valid, .scanout_line_y,
 	.scanout_underflow, .scanout_skipped_lines, .consumer_primed,
@@ -286,7 +351,7 @@ framebuffer_consumer_read_path_dual_clock consumer (
 );
 
 framebuffer_sdram_phy sdram_phy (
-	.clk(clk_sdram), .producer_owns(producer_owns_sdram), .reader_owns(reader_owns_sdram),
+	.clk(clk_sdram), .capture_clk(clk_sdram_capture), .producer_owns(producer_owns_sdram), .reader_owns(reader_owns_sdram),
 	.producer_a(producer_sdram_a), .producer_ba(producer_sdram_ba), .producer_cke(producer_sdram_cke),
 	.producer_ncs(producer_sdram_ncs), .producer_nras(producer_sdram_nras), .producer_ncas(producer_sdram_ncas),
 	.producer_nwe(producer_sdram_nwe), .producer_dqml(producer_sdram_dqml), .producer_dqmh(producer_sdram_dqmh),
@@ -299,14 +364,17 @@ framebuffer_sdram_phy sdram_phy (
 	.dq_capture(sdram_dq_capture), .SDRAM_DQML, .SDRAM_DQMH, .SDRAM_DQ, .SDRAM_CLK
 );
 
-assign CLK_VIDEO = clk_sys;
+assign CLK_VIDEO = clk_video;
 assign CE_PIXEL = 1'b1;
-assign VGA_DE = raster_de && scanout_pixel_valid && (scanout_line_y == raster_y);
+assign VGA_DE = raster_de && (video_raster_test || debug_override ||
+	(scanout_pixel_valid && (scanout_line_y == raster_y)));
 assign VGA_HS = raster_hsync;
 assign VGA_VS = raster_vsync;
-assign VGA_R = VGA_DE ? {scanout_pixel[15:11], scanout_pixel[15:13]} : 8'h00;
-assign VGA_G = VGA_DE ? {scanout_pixel[10:5], scanout_pixel[10:9]} : 8'h00;
-assign VGA_B = VGA_DE ? {scanout_pixel[4:0], scanout_pixel[4:2]} : 8'h00;
+wire [15:0] video_pixel = video_raster_test ? raster_test_pixel :
+	debug_override ? debug_pixel : scanout_pixel;
+assign VGA_R = VGA_DE ? {video_pixel[15:11],video_pixel[15:13]} : 0;
+assign VGA_G = VGA_DE ? {video_pixel[10:5],video_pixel[10:9]} : 0;
+assign VGA_B = VGA_DE ? {video_pixel[4:0],video_pixel[4:2]} : 0;
 
 reg  [26:0] act_cnt;
 always @(posedge clk_sys) act_cnt <= act_cnt + 1'd1;

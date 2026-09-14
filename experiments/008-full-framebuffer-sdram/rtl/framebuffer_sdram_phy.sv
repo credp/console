@@ -3,14 +3,14 @@
 // Temporary single physical SDRAM-pin owner. Client selection remains the
 // one-shot policy for now, but no client is connected directly to board pins.
 module framebuffer_sdram_phy (
-    input logic clk, input logic producer_owns, input logic reader_owns,
+    input logic clk, input logic capture_clk, input logic producer_owns, input logic reader_owns,
     input logic [12:0] producer_a, input logic [1:0] producer_ba,
     input logic producer_cke, producer_ncs, producer_nras, producer_ncas, producer_nwe,
     input logic producer_dqml, producer_dqmh, input logic [15:0] producer_dq_out, input logic producer_dq_oe,
     input logic [12:0] reader_a, input logic [1:0] reader_ba,
     input logic reader_cke, reader_ncs, reader_nras, reader_ncas, reader_nwe,
     input logic reader_dqml, reader_dqmh, input logic [15:0] reader_dq_out, input logic reader_dq_oe,
-    output logic [15:0] dq_capture,
+    (* useioff = 1 *) output logic [15:0] dq_capture,
     output logic [12:0] SDRAM_A, output logic [1:0] SDRAM_BA,
     output logic SDRAM_CKE, SDRAM_nCS, SDRAM_nRAS, SDRAM_nCAS, SDRAM_nWE,
     output logic SDRAM_DQML, SDRAM_DQMH, inout wire [15:0] SDRAM_DQ,
@@ -19,9 +19,20 @@ module framebuffer_sdram_phy (
     logic [15:0] dq_out;
     logic dq_oe;
 
-    // This register sits directly at the board DQ port, so Quartus can pack
-    // it into the input I/O cell. Clients see only this registered interface.
-    (* useioff = 1 *) always_ff @(posedge clk) dq_capture <= SDRAM_DQ;
+    // Explicitly instantiate the Cyclone V input-DDIO primitive. Quartus 17
+    // did not honour inferred I/O-register placement here; this primitive is
+    // the unambiguous physical capture boundary for the reader data stream.
+    altddio_in #(
+        .intended_device_family("Cyclone V"),
+        .invert_input_clocks("OFF"),
+        .lpm_hint("UNUSED"),
+        .lpm_type("altddio_in"),
+        .power_up_high("OFF"),
+        .width(16)
+    ) dq_input_ddr (
+        .datain(SDRAM_DQ), .inclock(capture_clk), .inclocken(1'b1),
+        .aclr(1'b0), .aset(1'b0), .dataout_h(), .dataout_l(dq_capture)
+    );
 
     always_comb begin
         SDRAM_A='0; SDRAM_BA='0; SDRAM_CKE=0; SDRAM_nCS=1; SDRAM_nRAS=1;

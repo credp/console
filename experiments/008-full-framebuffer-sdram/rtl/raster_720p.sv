@@ -54,15 +54,16 @@ always_ff @(posedge clk) begin
     end
 end
 
-always @(posedge clk) begin
-    de    <= de_raw;
-    hsync <= hsync_raw;
-    vsync <= vsync_raw;
-end
-
 assign de_raw    = (h_count < 1280) && (v_count < 720);
 assign hsync_raw = (h_count >= 1390) && (h_count < 1430);
 assign vsync_raw = (v_count >= 725)  && (v_count < 730);
+
+// The framebuffer and pattern generators consume the live coordinates below.
+// Keep the timing outputs combinational from those same counters: registering
+// them here delays DE/sync by one pixel while x/y have already advanced.
+assign de    = de_raw;
+assign hsync = hsync_raw;
+assign vsync = vsync_raw;
 
 assign x = h_count;
 assign y = v_count;
