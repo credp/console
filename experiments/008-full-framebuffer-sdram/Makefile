@@ -1,7 +1,7 @@
 IVERILOG ?= iverilog
 VVP ?= vvp
 
-.PHONY: test test-producer-bl8 waveform clean
+.PHONY: test test-producer-bl8 test-producer-bl8-capacity test-producer-bl8-chunks waveform clean
 
 test: build/tb_framebuffer_pattern_pixel.vvp build/tb_framebuffer_machine_line_source.vvp build/tb_framebuffer_line_chunk_address.vvp build/tb_framebuffer_producer_lines.vvp build/tb_framebuffer_line_write_sequencer.vvp build/tb_framebuffer_producer_write_path.vvp build/tb_framebuffer_consumer_lines.vvp build/tb_framebuffer_line_read_sequencer.vvp build/tb_framebuffer_consumer_line_scheduler.vvp build/tb_framebuffer_scanout_timing_adapter.vvp build/tb_framebuffer_write_read_path.vvp
 	$(VVP) $<
@@ -21,6 +21,12 @@ waveform: build/tb_framebuffer_write_read_path.vvp
 
 test-producer-bl8: build/tb_framebuffer_producer_bl8_write_backend.vvp
 	$(VVP) build/tb_framebuffer_producer_bl8_write_backend.vvp
+
+test-producer-bl8-capacity: build/tb_framebuffer_producer_bl8_capacity.vvp
+	$(VVP) build/tb_framebuffer_producer_bl8_capacity.vvp
+
+test-producer-bl8-chunks: build/tb_framebuffer_producer_bl8_chunks.vvp
+	$(VVP) build/tb_framebuffer_producer_bl8_chunks.vvp
 
 build/tb_framebuffer_pattern_pixel.vvp: rtl/framebuffer_pattern_pixel.sv tb/tb_framebuffer_pattern_pixel.sv
 	mkdir -p build
@@ -66,9 +72,17 @@ build/tb_framebuffer_write_read_path.vvp: rtl/framebuffer_pattern_pixel.sv rtl/f
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_write_read_path -o $@ $^
 
-build/tb_framebuffer_producer_bl8_write_backend.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path.sv tb/tb_framebuffer_producer_bl8_write_backend.sv ../007-line-ping-pong-sdram-capture/rtl/line_capture_sdram_backend.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv ../../rtl/scanout-sdram-controller/tb/pin-model/sdram_pair_model.sv
+build/tb_framebuffer_producer_bl8_write_backend.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path.sv rtl/framebuffer_bl8_write_backend.sv tb/tb_framebuffer_producer_bl8_write_backend.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv ../../rtl/scanout-sdram-controller/tb/pin-model/sdram_pair_model.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -DSIMULATION -s tb_framebuffer_producer_bl8_write_backend -o $@ $^
+
+build/tb_framebuffer_producer_bl8_capacity.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path.sv rtl/framebuffer_bl8_write_backend.sv tb/tb_framebuffer_producer_bl8_write_backend.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv ../../rtl/scanout-sdram-controller/tb/pin-model/sdram_pair_model.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -DSIMULATION -Ptb_framebuffer_producer_bl8_write_backend.TEST_WIDTH=1280 -Ptb_framebuffer_producer_bl8_write_backend.TEST_HEIGHT=4 -Ptb_framebuffer_producer_bl8_write_backend.TEST_ADDR_WIDTH=11 -Ptb_framebuffer_producer_bl8_write_backend.TEST_CHUNK_WORDS=1280 -Ptb_framebuffer_producer_bl8_write_backend.REQUIRE_PRODUCER_STALL=1 -s tb_framebuffer_producer_bl8_write_backend -o $@ $^
+
+build/tb_framebuffer_producer_bl8_chunks.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path.sv rtl/framebuffer_bl8_write_backend.sv tb/tb_framebuffer_producer_bl8_write_backend.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv ../../rtl/scanout-sdram-controller/tb/pin-model/sdram_pair_model.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -DSIMULATION -Ptb_framebuffer_producer_bl8_write_backend.TEST_WIDTH=1280 -Ptb_framebuffer_producer_bl8_write_backend.TEST_HEIGHT=4 -Ptb_framebuffer_producer_bl8_write_backend.TEST_ADDR_WIDTH=11 -Ptb_framebuffer_producer_bl8_write_backend.TEST_CHUNK_WORDS=128 -Ptb_framebuffer_producer_bl8_write_backend.REQUIRE_PRODUCER_STALL=1 -s tb_framebuffer_producer_bl8_write_backend -o $@ $^
 
 clean:
 	rm -rf build

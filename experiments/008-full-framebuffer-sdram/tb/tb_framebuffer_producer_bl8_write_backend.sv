@@ -2,11 +2,15 @@
 
 // Compatibility test: experiment 008 producer request ports connect directly
 // to the proven experiment 007 BL8 write backend and its SDRAM pin model.
-module tb_framebuffer_producer_bl8_write_backend;
-    localparam integer TEST_WIDTH = 8;
-    localparam integer TEST_HEIGHT = 4;
-    localparam integer TEST_ADDR_WIDTH = 3;
-    localparam integer TEST_CHUNK_WORDS = 8;
+module tb_framebuffer_producer_bl8_write_backend #(
+    parameter integer TEST_WIDTH = 8,
+    parameter integer TEST_HEIGHT = 4,
+    parameter integer TEST_ADDR_WIDTH = 3,
+    parameter integer TEST_CHUNK_WORDS = 8,
+    parameter integer REQUIRE_PRODUCER_STALL = 0
+);
+    localparam integer CHUNKS_PER_LINE = TEST_WIDTH / TEST_CHUNK_WORDS;
+    localparam integer COMPLETIONS_TO_CHECK = (TEST_HEIGHT + 1) * CHUNKS_PER_LINE;
 
     logic clk = 1'b0;
     logic reset = 1'b1;
@@ -47,9 +51,12 @@ module tb_framebuffer_producer_bl8_write_backend;
     wire [15:0] sdram_dq;
     logic sdram_clk;
     integer completion_count;
+    integer producer_stall_cycle_count;
     integer line_index;
     integer word_index;
     logic [15:0] expected;
+    logic [24:0] expected_sdram_word_address;
+    logic saw_producer_stall;
 
     always #5 clk = !clk;
     assign producer_reset = reset || !init_done;
@@ -86,7 +93,7 @@ module tb_framebuffer_producer_bl8_write_backend;
         .writer_error(writer_error)
     );
 
-    line_capture_bl8_write_backend #(
+    framebuffer_bl8_write_backend #(
         .SDRAM_FREQ_HZ(100_000_000),
         .POWERUP_US(1)
     ) backend (
@@ -163,8 +170,15 @@ module tb_framebuffer_producer_bl8_write_backend;
     always_ff @(posedge clk) begin
         if (producer_reset) begin
             completion_count <= 0;
-        end else if (completion_valid && completion_ready) begin
-            completion_count <= completion_count + 1;
+            saw_producer_stall <= 1'b0;
+            producer_stall_cycle_count <= 0;
+        end else begin
+            if (completion_valid && completion_ready)
+                completion_count <= completion_count + 1;
+            if (producer_stalled_waiting_for_free_line || producer_stalled_waiting_for_writer) begin
+                saw_producer_stall <= 1'b1;
+                producer_stall_cycle_count <= producer_stall_cycle_count + 1;
+            end
         end
     end
 
@@ -178,7 +192,7 @@ module tb_framebuffer_producer_bl8_write_backend;
         reset = 1'b0;
 
         // Four lines create frame zero; a fifth overwrites line zero in frame one.
-        wait(completion_count == TEST_HEIGHT + 1);
+        wait(completion_count == COMPLETIONS_TO_CHECK);
         repeat (20) @(posedge clk);
 
         if (writer_error || backend_error || completion_error) begin
@@ -190,20 +204,36 @@ module tb_framebuffer_producer_bl8_write_backend;
             for (word_index = 0; word_index < TEST_WIDTH; word_index = word_index + 1) begin
                 expected = expected_pixel(11'(word_index), 10'(line_index),
                                           (line_index == 0) ? 8'd1 : 8'd0);
-                if (memory.mem[0][0][0][line_index * TEST_WIDTH + word_index] !== expected) begin
+                expected_sdram_word_address = line_index * TEST_WIDTH + word_index;
+                if (memory.mem[0][expected_sdram_word_address[24:23]]
+                               [expected_sdram_word_address[22:10]]
+                               [expected_sdram_word_address[9:0]] !== expected) begin
                     $fatal(1, "SDRAM mismatch x=%0d y=%0d got=%h expected=%h",
                            word_index, line_index,
-                           memory.mem[0][0][0][line_index * TEST_WIDTH + word_index], expected);
+                           memory.mem[0][expected_sdram_word_address[24:23]]
+                                     [expected_sdram_word_address[22:10]]
+                                     [expected_sdram_word_address[9:0]], expected);
                 end
             end
         end
 
-        $display("PASS framebuffer_producer_bl8_write_backend: producer writes through BL8 SDRAM backend");
+        if (REQUIRE_PRODUCER_STALL && !saw_producer_stall)
+            $fatal(1, "expected the producer to stall behind the BL8 backend");
+
+        $display("PASS framebuffer_producer_bl8_write_backend: producer writes through BL8 SDRAM backend stall_cycles=%0d",
+                 producer_stall_cycle_count);
         $finish;
     end
 
     initial begin
         repeat (100_000) @(posedge clk);
         $fatal(1, "producer BL8 write backend watchdog");
+    end
+
+    initial begin
+        if ((TEST_WIDTH % TEST_CHUNK_WORDS) != 0)
+            $fatal(1, "test chunk size must divide the line width evenly");
+        if ((TEST_CHUNK_WORDS % 8) != 0)
+            $fatal(1, "BL8 backend requires a request length divisible by eight");
     end
 endmodule

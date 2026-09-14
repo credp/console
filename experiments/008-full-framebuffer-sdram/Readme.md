@@ -115,10 +115,11 @@ The first implemented blocks are:
 to one simulated linear memory. It verifies every pixel after the round trip;
 it is a simulation integration point, not the future SDRAM controller.
 
-`tb_framebuffer_producer_bl8_write_backend` directly connects the producer to
-the proven experiment 007 BL8 write backend and SDRAM pin model. It is a
-compatibility test only: experiment 008 does not yet include that backend in
-its synthesizable source list.
+`framebuffer_bl8_write_backend` is the experiment-local copy of experiment
+007's small BL8 write engine, including the word-0 alignment correction proven
+by the pin-model test. `tb_framebuffer_producer_bl8_write_backend` directly
+connects the producer to it and the SDRAM pin model. The backend is listed for
+Quartus but is not yet connected to the experiment's hardware top level.
 
 Run its simulation with:
 
@@ -139,6 +140,20 @@ To run the physical BL8 write compatibility test and inspect its waveform:
 ```bash
 make test-producer-bl8
 gtkwave build/framebuffer_producer_bl8_write_backend.vcd
+```
+
+To run the same test with real 1280-word lines, including SDRAM row crossings
+and expected producer backpressure:
+
+```bash
+make test-producer-bl8-capacity
+```
+
+To split each 1280-word line into ten 128-word requests (each internally
+transferred as sixteen BL8 writes):
+
+```bash
+make test-producer-bl8-chunks
 ```
 
 ## Upstream template notes
