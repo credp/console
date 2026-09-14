@@ -91,7 +91,10 @@ The first implemented blocks are:
   not real SDRAM;
 - `framebuffer_consumer_lines`, a consumer-side two-line prototype. It fills
   one line from a stream, exposes only completed lines to scanout, and stalls
-  instead of overwriting an output line that has not advanced.
+  instead of overwriting an output line that has not advanced;
+- `framebuffer_line_read_sequencer`, a consumer-side line fill sequencer that
+  emits fixed-size read chunks and turns returned read data into the fill
+  stream. It still talks to a fake read source in simulation.
 
 Run its simulation with:
 

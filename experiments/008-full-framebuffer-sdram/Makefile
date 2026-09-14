@@ -3,7 +3,7 @@ VVP ?= vvp
 
 .PHONY: test clean
 
-test: build/tb_framebuffer_pattern_pixel.vvp build/tb_framebuffer_machine_line_source.vvp build/tb_framebuffer_line_chunk_address.vvp build/tb_framebuffer_producer_lines.vvp build/tb_framebuffer_line_write_sequencer.vvp build/tb_framebuffer_producer_write_path.vvp build/tb_framebuffer_consumer_lines.vvp
+test: build/tb_framebuffer_pattern_pixel.vvp build/tb_framebuffer_machine_line_source.vvp build/tb_framebuffer_line_chunk_address.vvp build/tb_framebuffer_producer_lines.vvp build/tb_framebuffer_line_write_sequencer.vvp build/tb_framebuffer_producer_write_path.vvp build/tb_framebuffer_consumer_lines.vvp build/tb_framebuffer_line_read_sequencer.vvp
 	$(VVP) $<
 	$(VVP) build/tb_framebuffer_machine_line_source.vvp
 	$(VVP) build/tb_framebuffer_line_chunk_address.vvp
@@ -11,6 +11,7 @@ test: build/tb_framebuffer_pattern_pixel.vvp build/tb_framebuffer_machine_line_s
 	$(VVP) build/tb_framebuffer_line_write_sequencer.vvp
 	$(VVP) build/tb_framebuffer_producer_write_path.vvp
 	$(VVP) build/tb_framebuffer_consumer_lines.vvp
+	$(VVP) build/tb_framebuffer_line_read_sequencer.vvp
 
 build/tb_framebuffer_pattern_pixel.vvp: rtl/framebuffer_pattern_pixel.sv tb/tb_framebuffer_pattern_pixel.sv
 	mkdir -p build
@@ -39,6 +40,10 @@ build/tb_framebuffer_producer_write_path.vvp: rtl/framebuffer_pattern_pixel.sv r
 build/tb_framebuffer_consumer_lines.vvp: rtl/framebuffer_consumer_lines.sv tb/tb_framebuffer_consumer_lines.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_consumer_lines -o $@ $^
+
+build/tb_framebuffer_line_read_sequencer.vvp: rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_line_read_sequencer.sv tb/tb_framebuffer_line_read_sequencer.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_line_read_sequencer -o $@ $^
 
 clean:
 	rm -rf build
