@@ -11,7 +11,8 @@ module framebuffer_producer_bl8_sdram_path #(
     parameter integer SDRAM_POWERUP_US = 200,
     parameter longint unsigned REFRESH_INTERVAL_CYCLES = (SDRAM_FREQ_HZ * 70) / 10_000_000
 ) (
-    input  logic        clk,
+    input  logic        machine_clk,
+    input  logic        sdram_clk,
     input  logic        reset,
 
     output logic        sdram_init_done,
@@ -38,7 +39,12 @@ module framebuffer_producer_bl8_sdram_path #(
     inout  wire  [15:0] SDRAM_DQ,
     output logic        SDRAM_CLK
 );
-    logic producer_reset;
+    logic machine_producer_reset;
+    logic sdram_producer_reset;
+    (* altera_attribute = {"-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS"} *) logic sdram_reset_sync_meta = 1'b1;
+    (* altera_attribute = {"-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS"} *) logic sdram_reset_sync = 1'b1;
+    logic sdram_init_done_machine_sync_1;
+    logic sdram_init_done_machine_sync_2;
     logic req_valid;
     logic req_ready;
     logic req_write;
@@ -54,19 +60,45 @@ module framebuffer_producer_bl8_sdram_path #(
     logic [7:0] completion_tag;
     logic [15:0] completion_words;
     logic completion_error;
+    logic [12:0] phy_a;
+    logic [1:0] phy_ba;
+    logic phy_cke, phy_ncs, phy_nras, phy_ncas, phy_nwe;
+    logic phy_dqml, phy_dqmh, phy_dq_oe;
+    logic [15:0] phy_dq_out;
 
-    // The producer begins only after the backend has completed SDRAM setup.
-    assign producer_reset = reset || !sdram_init_done;
+    // init_done is generated in the SDRAM clock domain. Its synchronized copy
+    // is the only reset-release information used by machine-clock logic.
+    always_ff @(posedge machine_clk) begin
+        if (reset) begin
+            sdram_init_done_machine_sync_1 <= 1'b0;
+            sdram_init_done_machine_sync_2 <= 1'b0;
+        end else begin
+            sdram_init_done_machine_sync_1 <= sdram_init_done;
+            sdram_init_done_machine_sync_2 <= sdram_init_done_machine_sync_1;
+        end
+    end
+
+    // status[0] and the board reset originate outside sdram_clk. Only this
+    // synchronizer sees that asynchronous reset request on the SDRAM side.
+    always_ff @(posedge sdram_clk) begin
+        sdram_reset_sync_meta <= reset;
+        sdram_reset_sync <= sdram_reset_sync_meta;
+    end
+
+    assign machine_producer_reset = reset || !sdram_init_done_machine_sync_2;
+    assign sdram_producer_reset = sdram_reset_sync || !sdram_init_done;
     assign write_completion = completion_valid && completion_ready;
 
-    framebuffer_producer_write_path #(
+    framebuffer_producer_write_path_dual_clock #(
         .FRAMEBUFFER_WIDTH(FRAMEBUFFER_WIDTH),
         .FRAMEBUFFER_HEIGHT(FRAMEBUFFER_HEIGHT),
         .LINE_ADDR_WIDTH(LINE_ADDR_WIDTH),
         .WRITE_CHUNK_WORDS(WRITE_CHUNK_WORDS)
     ) producer (
-        .clk(clk),
-        .reset(producer_reset),
+        .machine_clk(machine_clk),
+        .sdram_clk(sdram_clk),
+        .machine_reset(machine_producer_reset),
+        .sdram_reset(sdram_producer_reset),
         .req_valid(req_valid),
         .req_ready(req_ready),
         .req_write(req_write),
@@ -96,7 +128,7 @@ module framebuffer_producer_bl8_sdram_path #(
         .POWERUP_US(SDRAM_POWERUP_US),
         .REFRESH_INTERVAL_CYCLES(REFRESH_INTERVAL_CYCLES)
     ) backend (
-        .clk(clk),
+        .clk(sdram_clk),
         .reset(reset),
         .req_valid(req_valid),
         .req_ready(req_ready),
@@ -118,6 +150,32 @@ module framebuffer_producer_bl8_sdram_path #(
         .completion_error(completion_error),
         .init_done(sdram_init_done),
         .diagnostic_error(sdram_error),
+        .phy_a(phy_a),
+        .phy_ba(phy_ba),
+        .phy_cke(phy_cke),
+        .phy_ncs(phy_ncs),
+        .phy_nras(phy_nras),
+        .phy_ncas(phy_ncas),
+        .phy_nwe(phy_nwe),
+        .phy_dqml(phy_dqml),
+        .phy_dqmh(phy_dqmh),
+        .phy_dq_out(phy_dq_out),
+        .phy_dq_oe(phy_dq_oe)
+    );
+
+    framebuffer_sdram_write_phy phy (
+        .clk(sdram_clk),
+        .protocol_a(phy_a),
+        .protocol_ba(phy_ba),
+        .protocol_cke(phy_cke),
+        .protocol_ncs(phy_ncs),
+        .protocol_nras(phy_nras),
+        .protocol_ncas(phy_ncas),
+        .protocol_nwe(phy_nwe),
+        .protocol_dqml(phy_dqml),
+        .protocol_dqmh(phy_dqmh),
+        .protocol_dq_out(phy_dq_out),
+        .protocol_dq_oe(phy_dq_oe),
         .SDRAM_A(SDRAM_A),
         .SDRAM_BA(SDRAM_BA),
         .SDRAM_CKE(SDRAM_CKE),

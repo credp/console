@@ -119,13 +119,31 @@ it is a simulation integration point, not the future SDRAM controller.
 007's small BL8 write engine, including the word-0 alignment correction proven
 by the pin-model test. It services periodic refresh requests between safe BL8
 write boundaries. `tb_framebuffer_producer_bl8_write_backend` directly
-connects the producer to it and the SDRAM pin model. The backend is listed for
-Quartus but is not yet connected to the experiment's hardware top level.
+connects the producer to it and the SDRAM pin model.
 
 `framebuffer_producer_bl8_sdram_path` is the synthesizable producer-side
-composition. It holds the producer in reset until SDRAM initialisation has
-completed, exposes a write-completion pulse for instrumentation, and owns the
-physical SDRAM pins.
+composition. The algorithmic producer fills one port of each line RAM at the
+20 MHz machine clock. The SDRAM-clock side owns the other RAM port, sequential
+write control, BL8 backend, and PHY. Per-buffer toggle handshakes make the
+completed-line and release events explicit; the SDRAM clock never directly
+drives machine-world counters or RAM writes.
+
+`framebuffer_sdram_write_phy` is the explicit pin-facing boundary. It owns the
+command, mask, write-data and output-enable registers plus the inverted
+forwarded SDRAM clock. Quartus 17 packed those registers into the SDRAM I/O
+cells in the first hardware build.
+
+`Template.sv` connects this producer-only path to the physical SDRAM at the
+142.857 MHz command-clock point characterized in experiment 006.a. The old
+20 MHz test video remains independent; no framebuffer consumer or HDMI
+scanout is connected yet. `LED_USER` is off while SDRAM initializes, solid
+once initialization completes, and flashes if the producer reports an error.
+
+The Quartus 17 build produces `output_files/Template.rbf`. After the explicit
+CDC split, the focused 142.857 MHz SDRAM-clock report has 156.59 MHz Fmax and
+0.614 ns worst setup slack. The project-wide report also contains unrelated
+framework timing; review the focused SDRAM-clock path before treating a build
+as evidence about this experiment's writer.
 
 Run its simulation with:
 

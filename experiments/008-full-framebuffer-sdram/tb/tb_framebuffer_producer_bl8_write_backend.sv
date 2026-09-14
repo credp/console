@@ -15,6 +15,7 @@ module tb_framebuffer_producer_bl8_write_backend #(
     localparam integer COMPLETIONS_TO_CHECK = (TEST_HEIGHT + 1) * CHUNKS_PER_LINE;
 
     logic clk = 1'b0;
+    logic machine_clk = 1'b0;
     logic reset = 1'b1;
     logic init_done;
     logic backend_error;
@@ -47,6 +48,7 @@ module tb_framebuffer_producer_bl8_write_backend #(
     logic saw_producer_stall;
 
     always #5 clk = !clk;
+    always #25 machine_clk = !machine_clk;
     framebuffer_producer_bl8_sdram_path #(
         .FRAMEBUFFER_WIDTH(TEST_WIDTH),
         .FRAMEBUFFER_HEIGHT(TEST_HEIGHT),
@@ -56,7 +58,8 @@ module tb_framebuffer_producer_bl8_write_backend #(
         .SDRAM_POWERUP_US(1),
         .REFRESH_INTERVAL_CYCLES(REFRESH_INTERVAL_CYCLES)
     ) dut (
-        .clk(clk),
+        .machine_clk(machine_clk),
+        .sdram_clk(clk),
         .reset(reset),
         .sdram_init_done(init_done),
         .sdram_error(backend_error),

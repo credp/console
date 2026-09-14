@@ -27,17 +27,19 @@ module framebuffer_bl8_write_backend #(
     output logic        completion_error,
     output logic        init_done,
     output logic        diagnostic_error,
-    output logic [12:0] SDRAM_A,
-    output logic [1:0]  SDRAM_BA,
-    output logic        SDRAM_CKE,
-    output logic        SDRAM_nCS,
-    output logic        SDRAM_nRAS,
-    output logic        SDRAM_nCAS,
-    output logic        SDRAM_nWE,
-    output logic        SDRAM_DQML,
-    output logic        SDRAM_DQMH,
-    inout  wire  [15:0] SDRAM_DQ,
-    output logic        SDRAM_CLK
+    // This is the protocol-side half of the PHY boundary. The pin-facing
+    // registers and forwarded clock are in framebuffer_sdram_write_phy.
+    output logic [12:0] phy_a,
+    output logic [1:0]  phy_ba,
+    output logic        phy_cke,
+    output logic        phy_ncs,
+    output logic        phy_nras,
+    output logic        phy_ncas,
+    output logic        phy_nwe,
+    output logic        phy_dqml,
+    output logic        phy_dqmh,
+    output logic [15:0] phy_dq_out,
+    output logic        phy_dq_oe
 );
     localparam logic [3:0] CMD_NOP = 4'b0111;
     localparam logic [3:0] CMD_ACTIVE = 4'b0011;
@@ -95,6 +97,7 @@ module framebuffer_bl8_write_backend #(
     logic [1:0] burst_byte_enable [0:7];
     logic [2:0] fill_count_q;
     logic [2:0] beat_q;
+    (* preserve *) logic write_ready_q;
     logic [24:0] burst_word_addr;
     logic [24:0] next_word_addr;
     logic row_open_q;
@@ -114,15 +117,18 @@ module framebuffer_bl8_write_backend #(
     (* altera_attribute = {"-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS"} *) logic reset_sync_meta = 1'b1;
     (* altera_attribute = {"-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS"} *) logic reset_sync = 1'b1;
 
-    assign {SDRAM_nCS, SDRAM_nRAS, SDRAM_nCAS, SDRAM_nWE} = command;
-    assign SDRAM_DQ = dq_oe_q ? dq_out_q : 16'hzzzz;
-    assign {SDRAM_DQMH, SDRAM_DQML} = dqm_q;
+    assign {phy_ncs, phy_nras, phy_ncas, phy_nwe} = command;
+    assign {phy_dqmh, phy_dqml} = dqm_q;
+    assign phy_dq_out = dq_out_q;
+    assign phy_dq_oe = dq_oe_q;
     assign burst_word_addr = address_q[25:1] + {9'b0, burst_word_start_q};
     assign next_word_addr = address_q[25:1] + {9'b0, word_index_q};
 
     assign init_done = state >= IDLE;
     assign req_ready = (state == IDLE) && !refresh_due;
-    assign write_ready = state == COLLECT;
+    // Ready is registered. The line writer therefore sees a stable SDRAM
+    // clock-domain credit, rather than a combinational decode of this FSM.
+    assign write_ready = write_ready_q;
     assign read_valid = 1'b0;
     assign read_data = 16'h0000;
     assign completion_valid = state == COMPLETE;
@@ -130,14 +136,6 @@ module framebuffer_bl8_write_backend #(
     assign completion_words = words_q;
     assign completion_error = error_q;
     assign diagnostic_error = 1'b0;
-
-    altddio_out #(.extend_oe_disable("OFF"),.intended_device_family("Cyclone V"),
-        .invert_output("OFF"),.lpm_hint("UNUSED"),.lpm_type("altddio_out"),
-        .oe_reg("UNREGISTERED"),.power_up_high("OFF"),.width(1)) sdramclk_ddr
-    (
-        .datain_h(1'b0),.datain_l(1'b1),.outclock(clk),.dataout(SDRAM_CLK),
-        .oe(1'b1),.outclocken(1'b1)
-    );
 
     initial begin
         if (REFRESH_INTERVAL_CYCLES <= TRFC_CYCLES)
@@ -152,9 +150,9 @@ module framebuffer_bl8_write_backend #(
             state <= INIT_WAIT;
             command <= CMD_NOP;
             wait_count <= POWERUP_CYCLES[31:0];
-            SDRAM_CKE <= 1'b0;
-            SDRAM_A <= '0;
-            SDRAM_BA <= '0;
+            phy_cke <= 1'b0;
+            phy_a <= '0;
+            phy_ba <= '0;
             address_q <= '0;
             words_q <= '0;
             word_index_q <= '0;
@@ -162,6 +160,7 @@ module framebuffer_bl8_write_backend #(
             tag_q <= '0;
             fill_count_q <= '0;
             beat_q <= '0;
+            write_ready_q <= 1'b0;
             row_open_q <= 1'b0;
             open_bank_q <= '0;
             open_row_q <= '0;
@@ -179,6 +178,7 @@ module framebuffer_bl8_write_backend #(
         end else begin
             command <= CMD_NOP;
             dq_oe_q <= 1'b0;
+            write_ready_q <= (state == COLLECT);
 
             if ((state >= IDLE) && !refresh_due) begin
                 if (refresh_count == 0)
@@ -189,7 +189,7 @@ module framebuffer_bl8_write_backend #(
 
             case (state)
                 INIT_WAIT: begin
-                    SDRAM_CKE <= 1'b1;
+                    phy_cke <= 1'b1;
                     if (wait_count == 0)
                         state <= INIT_PRECHARGE;
                     else
@@ -197,7 +197,7 @@ module framebuffer_bl8_write_backend #(
                 end
                 INIT_PRECHARGE: begin
                     command <= CMD_PRECHARGE;
-                    SDRAM_A[10] <= 1'b1;
+                    phy_a[10] <= 1'b1;
                     wait_count <= TRP_CYCLES[31:0];
                     state <= INIT_WAIT_PRECHARGE;
                 end
@@ -231,8 +231,8 @@ module framebuffer_bl8_write_backend #(
                 end
                 INIT_MODE: begin
                     command <= CMD_LOAD_MODE;
-                    SDRAM_BA <= 2'b00;
-                    SDRAM_A <= MODE_BL8_WRITE_BURST;
+                    phy_ba <= 2'b00;
+                    phy_a <= MODE_BL8_WRITE_BURST;
                     wait_count <= 32'd2;
                     state <= INIT_WAIT_MODE;
                 end
@@ -294,8 +294,8 @@ module framebuffer_bl8_write_backend #(
                 end
                 PRECHARGE_OPEN: begin
                     command <= CMD_PRECHARGE;
-                    SDRAM_BA <= open_bank_q;
-                    SDRAM_A[10] <= 1'b0;
+                    phy_ba <= open_bank_q;
+                    phy_a[10] <= 1'b0;
                     row_open_q <= 1'b0;
                     wait_count <= TRP_CYCLES[31:0];
                     state <= WAIT_PRECHARGE_OPEN;
@@ -319,8 +319,8 @@ module framebuffer_bl8_write_backend #(
                 end
                 ACTIVATE: begin
                     command <= CMD_ACTIVE;
-                    SDRAM_BA <= burst_word_addr[24:23];
-                    SDRAM_A <= burst_word_addr[22:10];
+                    phy_ba <= burst_word_addr[24:23];
+                    phy_a <= burst_word_addr[22:10];
                     row_open_q <= 1'b1;
                     open_bank_q <= burst_word_addr[24:23];
                     open_row_q <= burst_word_addr[22:10];
@@ -343,8 +343,8 @@ module framebuffer_bl8_write_backend #(
                 end
                 WRITE_CMD: begin
                     command <= CMD_WRITE;
-                    SDRAM_A <= {2'b00, 1'b0, burst_word_addr[9:0]};
-                    SDRAM_BA <= burst_word_addr[24:23];
+                    phy_a <= {2'b00, 1'b0, burst_word_addr[9:0]};
+                    phy_ba <= burst_word_addr[24:23];
                     dq_oe_q <= 1'b1;
                     // The SDRAM samples its first write word on the clock
                     // after the WRITE command. Keep beat zero present here;

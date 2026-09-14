@@ -27,8 +27,7 @@ assign ADC_BUS  = 'Z;
 assign USER_OUT = '1;
 assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
-assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CLK, SDRAM_CKE, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
-assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = '0;  
+assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = '0;
 
 assign VGA_SL = 0;
 assign VGA_F1 = 0;
@@ -110,6 +109,8 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 ///////////////////////   CLOCKS   ///////////////////////////////
 
 wire clk_sys;
+wire clk_sdram;
+wire sdram_pll_locked;
 pll pll
 (
 	.refclk(CLK_50M),
@@ -117,7 +118,60 @@ pll pll
 	.outclk_0(clk_sys)
 );
 
-wire reset = RESET | status[0] | buttons[1];
+// Experiment 006.a characterized this command-clock point with an inverted
+// forwarded SDRAM clock. Scanout remains on the existing 20 MHz framework
+// clock while the producer constructs the SDRAM framebuffer independently.
+framebuffer_sdram_pll sdram_pll
+(
+	.refclk(CLK_50M),
+	.rst(0),
+	.outclk(clk_sdram),
+	.locked(sdram_pll_locked)
+);
+
+wire reset = RESET | status[0] | buttons[1] | ~sdram_pll_locked;
+
+wire sdram_init_done;
+wire sdram_error;
+wire write_completion;
+wire [10:0] producer_pixel_x;
+wire [9:0] producer_line_y;
+wire [7:0] producer_frame_index;
+wire producer_stalled_waiting_for_free_line;
+wire producer_stalled_waiting_for_writer;
+wire writer_busy;
+wire writer_error;
+
+// This is intentionally producer-only. The consumer and HDMI scanout remain
+// disconnected until their separately verified SDRAM read path is ready.
+framebuffer_producer_bl8_sdram_path #(
+	.SDRAM_FREQ_HZ(142_857_000)
+) framebuffer_producer (
+	.machine_clk(clk_sys),
+	.sdram_clk(clk_sdram),
+	.reset(reset),
+	.sdram_init_done(sdram_init_done),
+	.sdram_error(sdram_error),
+	.write_completion(write_completion),
+	.producer_pixel_x(producer_pixel_x),
+	.producer_line_y(producer_line_y),
+	.producer_frame_index(producer_frame_index),
+	.producer_stalled_waiting_for_free_line(producer_stalled_waiting_for_free_line),
+	.producer_stalled_waiting_for_writer(producer_stalled_waiting_for_writer),
+	.writer_busy(writer_busy),
+	.writer_error(writer_error),
+	.SDRAM_A(SDRAM_A),
+	.SDRAM_BA(SDRAM_BA),
+	.SDRAM_CKE(SDRAM_CKE),
+	.SDRAM_nCS(SDRAM_nCS),
+	.SDRAM_nRAS(SDRAM_nRAS),
+	.SDRAM_nCAS(SDRAM_nCAS),
+	.SDRAM_nWE(SDRAM_nWE),
+	.SDRAM_DQML(SDRAM_DQML),
+	.SDRAM_DQMH(SDRAM_DQMH),
+	.SDRAM_DQ(SDRAM_DQ),
+	.SDRAM_CLK(SDRAM_CLK)
+);
 
 wire [1:0] col = status[4:3];
 
@@ -167,7 +221,9 @@ assign VGA_R  = (!col || col == 1) ? video : 8'd0;
 assign VGA_B  = (!col || col == 3) ? video : 8'd0;
 
 reg  [26:0] act_cnt;
-always @(posedge clk_sys) act_cnt <= act_cnt + 1'd1; 
-assign LED_USER    = act_cnt[26]  ? act_cnt[25:18]  > act_cnt[7:0]  : act_cnt[25:18]  <= act_cnt[7:0];
+always @(posedge clk_sys) act_cnt <= act_cnt + 1'd1;
+// Off during SDRAM initialization, solid after it, and flashing for any
+// producer/backend error. Frame completion is visible in SignalTap.
+assign LED_USER = (sdram_error || writer_error) ? act_cnt[24] : sdram_init_done;
 
 endmodule
