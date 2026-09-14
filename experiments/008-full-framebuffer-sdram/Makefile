@@ -54,7 +54,7 @@ build/tb_framebuffer_consumer_line_scheduler.vvp: rtl/framebuffer_consumer_line_
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_consumer_line_scheduler -o $@ $^
 
-build/tb_framebuffer_write_read_path.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path.sv rtl/framebuffer_consumer_lines.sv rtl/framebuffer_line_read_sequencer.sv rtl/framebuffer_consumer_read_path.sv rtl/framebuffer_transfer_statistics.sv tb/tb_framebuffer_write_read_path.sv
+build/tb_framebuffer_write_read_path.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path.sv rtl/framebuffer_consumer_lines.sv rtl/framebuffer_line_read_sequencer.sv rtl/framebuffer_consumer_line_scheduler.sv rtl/framebuffer_consumer_read_path.sv rtl/framebuffer_transfer_statistics.sv tb/tb_framebuffer_write_read_path.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_write_read_path -o $@ $^
 

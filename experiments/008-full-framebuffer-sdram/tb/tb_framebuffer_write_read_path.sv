@@ -29,10 +29,7 @@ module tb_framebuffer_write_read_path;
     logic writer_busy;
     logic writer_error;
 
-    logic start_line_valid;
-    logic start_line_ready;
-    logic [9:0] start_line_y;
-    logic output_line_advance;
+    logic scanout_line_advance;
     logic output_line_valid;
     logic [9:0] output_line_y;
     logic [TEST_ADDR_WIDTH-1:0] scanout_x;
@@ -56,6 +53,8 @@ module tb_framebuffer_write_read_path;
     logic reader_error;
     logic consumer_waiting_for_output_release;
     logic consumer_overwrite_error;
+    logic scheduler_waiting_for_scanout;
+    logic scheduler_timing_error;
 
     logic [31:0] producer_stall_cycles;
     logic [31:0] producer_idle_cycles;
@@ -95,12 +94,12 @@ module tb_framebuffer_write_read_path;
 
     framebuffer_consumer_read_path #(
         .FRAMEBUFFER_WIDTH(TEST_WIDTH),
+        .FRAMEBUFFER_HEIGHT(TEST_HEIGHT),
         .LINE_ADDR_WIDTH(TEST_ADDR_WIDTH),
         .READ_CHUNK_WORDS(TEST_CHUNK_WORDS)
     ) consumer (
         .clk(clk), .reset(reset),
-        .start_line_valid(start_line_valid), .start_line_ready(start_line_ready),
-        .start_line_y(start_line_y), .output_line_advance(output_line_advance),
+        .scanout_line_advance(scanout_line_advance),
         .output_line_valid(output_line_valid), .output_buffer(), .output_line_y(output_line_y),
         .scanout_x(scanout_x), .scanout_pixel(scanout_pixel),
         .scanout_pixel_valid(scanout_pixel_valid),
@@ -113,7 +112,10 @@ module tb_framebuffer_write_read_path;
         .completion_words(consumer_completion_words), .completion_error(consumer_completion_error),
         .reader_busy(reader_busy), .reader_error(reader_error),
         .consumer_waiting_for_output_release(consumer_waiting_for_output_release),
-        .consumer_overwrite_error(consumer_overwrite_error)
+        .consumer_overwrite_error(consumer_overwrite_error),
+        .next_framebuffer_line_y(),
+        .scheduler_waiting_for_scanout(scheduler_waiting_for_scanout),
+        .scheduler_timing_error(scheduler_timing_error)
     );
 
     framebuffer_transfer_statistics statistics (
@@ -190,14 +192,6 @@ module tb_framebuffer_write_read_path;
         end
     endtask
 
-    task automatic start_read(input integer line_y);
-        begin
-            wait(start_line_ready);
-            @(negedge clk); start_line_y = line_y; start_line_valid = 1'b1;
-            @(posedge clk); #1; start_line_valid = 1'b0;
-        end
-    endtask
-
     task automatic read_request(input integer expected_line, input integer expected_chunk);
         logic [26:0] expected_address;
         begin
@@ -262,7 +256,7 @@ module tb_framebuffer_write_read_path;
         producer_req_ready = 1'b0; producer_write_ready = 1'b0;
         producer_completion_valid = 1'b0; producer_completion_tag = '0;
         producer_completion_words = '0; producer_completion_error = 1'b0;
-        start_line_valid = 1'b0; start_line_y = '0; output_line_advance = 1'b0;
+        scanout_line_advance = 1'b0;
         scanout_x = '0; consumer_req_ready = 1'b0; consumer_read_valid = 1'b0;
         consumer_read_data = '0; consumer_completion_valid = 1'b0;
         consumer_completion_tag = '0; consumer_completion_words = '0;
@@ -288,28 +282,27 @@ module tb_framebuffer_write_read_path;
         end
 
         for (line_index = 0; line_index < TEST_HEIGHT; line_index = line_index + 1) begin
-            start_read(line_index);
             for (chunk_index = 0; chunk_index < TEST_WIDTH / TEST_CHUNK_WORDS; chunk_index = chunk_index + 1) begin
                 read_request(line_index, chunk_index);
                 read_words(line_index, chunk_index);
                 complete_read(chunk_index);
             end
-            wait(!reader_busy);
             if (line_index == 0) begin
                 check_scanout_line(line_index, 8'd1);
             end else begin
+                wait(scheduler_waiting_for_scanout);
                 if (!consumer_waiting_for_output_release) $fatal(1, "consumer did not wait for scanout");
                 repeat (5) @(posedge clk);
-                @(negedge clk); output_line_advance = 1'b1;
-                @(posedge clk); #1; output_line_advance = 1'b0;
+                @(negedge clk); scanout_line_advance = 1'b1;
+                @(posedge clk); #1; scanout_line_advance = 1'b0;
                 repeat (2) @(posedge clk);
                 check_scanout_line(line_index, 8'd1);
             end
         end
 
-        if (writer_error || reader_error || consumer_overwrite_error)
-            $fatal(1, "unexpected transfer error writer=%b reader=%b consumer_overwrite=%b",
-                   writer_error, reader_error, consumer_overwrite_error);
+        if (writer_error || reader_error || consumer_overwrite_error || scheduler_timing_error)
+            $fatal(1, "unexpected transfer error writer=%b reader=%b consumer_overwrite=%b scheduler=%b",
+                   writer_error, reader_error, consumer_overwrite_error, scheduler_timing_error);
         if (producer_stall_cycles == 0 || producer_idle_cycles == 0 ||
             consumer_stall_cycles == 0 || consumer_idle_cycles == 0)
             $fatal(1, "statistics did not observe all states producer_stall=%0d producer_idle=%0d consumer_stall=%0d consumer_idle=%0d",

@@ -96,7 +96,8 @@ The first implemented blocks are:
   emits fixed-size read chunks and turns returned read data into the fill
   stream. It still talks to a fake read source in simulation.
 - `framebuffer_consumer_read_path`, the matching thin composition of the read
-  sequencer and consumer line buffers;
+  sequencer, line scheduler, and consumer line buffers. Its only timing input
+  is the physical scanout line-boundary event;
 - `framebuffer_consumer_line_scheduler`, the explicit owner of consumer line
   order. It prefetches the next framebuffer line and only permits the scanout
   line transition after that fill is complete;

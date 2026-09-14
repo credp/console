@@ -4,17 +4,14 @@
 // ownership on the other. A later SDRAM backend connects to the request ports.
 module framebuffer_consumer_read_path #(
     parameter integer FRAMEBUFFER_WIDTH = 1280,
+    parameter integer FRAMEBUFFER_HEIGHT = 720,
     parameter integer LINE_ADDR_WIDTH = 11,
     parameter integer READ_CHUNK_WORDS = 1280
 ) (
     input  logic                         clk,
     input  logic                         reset,
 
-    input  logic                         start_line_valid,
-    output logic                         start_line_ready,
-    input  logic [9:0]                   start_line_y,
-
-    input  logic                         output_line_advance,
+    input  logic                         scanout_line_advance,
     output logic                         output_line_valid,
     output logic                         output_buffer,
     output logic [9:0]                   output_line_y,
@@ -40,13 +37,36 @@ module framebuffer_consumer_read_path #(
     output logic                         reader_busy,
     output logic                         reader_error,
     output logic                         consumer_waiting_for_output_release,
-    output logic                         consumer_overwrite_error
+    output logic                         consumer_overwrite_error,
+    output logic [9:0]                   next_framebuffer_line_y,
+    output logic                         scheduler_waiting_for_scanout,
+    output logic                         scheduler_timing_error
 );
     logic fill_valid;
     logic fill_ready;
     logic [15:0] fill_pixel;
     logic [9:0] fill_line_y;
     logic line_done;
+    logic start_line_valid;
+    logic start_line_ready;
+    logic [9:0] start_line_y;
+    logic output_line_advance;
+
+    framebuffer_consumer_line_scheduler #(
+        .FRAMEBUFFER_HEIGHT(FRAMEBUFFER_HEIGHT)
+    ) line_scheduler (
+        .clk(clk),
+        .reset(reset),
+        .start_line_valid(start_line_valid),
+        .start_line_ready(start_line_ready),
+        .start_line_y(start_line_y),
+        .line_fetch_done(line_done),
+        .scanout_line_advance(scanout_line_advance),
+        .output_line_advance(output_line_advance),
+        .next_framebuffer_line_y(next_framebuffer_line_y),
+        .waiting_for_scanout(scheduler_waiting_for_scanout),
+        .timing_error(scheduler_timing_error)
+    );
 
     framebuffer_line_read_sequencer #(
         .FRAMEBUFFER_WIDTH(FRAMEBUFFER_WIDTH),
