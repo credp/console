@@ -39,7 +39,9 @@ module framebuffer_producer_bl8_sdram_path #(
     output logic        SDRAM_DQML,
     output logic        SDRAM_DQMH,
     inout  wire  [15:0] SDRAM_DQ,
-    output logic        SDRAM_CLK
+    output logic        SDRAM_CLK,
+    output logic [15:0] sdram_dq_out,
+    output logic        sdram_dq_oe
 );
     logic machine_producer_reset;
     logic sdram_producer_reset;
@@ -198,6 +200,8 @@ module framebuffer_producer_bl8_sdram_path #(
         .SDRAM_DQML(SDRAM_DQML),
         .SDRAM_DQMH(SDRAM_DQMH),
         .SDRAM_DQ(SDRAM_DQ),
-        .SDRAM_CLK(SDRAM_CLK)
+        .SDRAM_CLK(SDRAM_CLK),
+        .SDRAM_DQ_OUT(sdram_dq_out),
+        .SDRAM_DQ_OE(sdram_dq_oe)
     );
 endmodule

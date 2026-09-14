@@ -34,7 +34,9 @@ module framebuffer_agg23_read_backend #(
     output logic        SDRAM_nWE,
     output logic        SDRAM_DQML,
     output logic        SDRAM_DQMH,
-    inout  wire  [15:0] SDRAM_DQ,
+    input  logic [15:0] sdram_dq_in,
+    output logic [15:0] sdram_dq_out,
+    output logic        sdram_dq_oe,
     output logic        SDRAM_CLK
 );
     logic [24:0] p0_addr;
@@ -64,7 +66,8 @@ module framebuffer_agg23_read_backend #(
         .p0_addr, .p0_data(16'h0000), .p0_byte_en(2'b00), .p0_q,
         .p0_wr_req(1'b0), .p0_rd_req, .p0_end_burst_req,
         .p0_available, .p0_ready, .p0_data_available,
-        .SDRAM_DQ, .SDRAM_A, .SDRAM_DQM(sdram_dqm), .SDRAM_BA,
+        .SDRAM_DQ_IN(sdram_dq_in), .SDRAM_DQ_OUT(sdram_dq_out),
+        .SDRAM_DQ_OE(sdram_dq_oe), .SDRAM_A, .SDRAM_DQM(sdram_dqm), .SDRAM_BA,
         .SDRAM_nCS, .SDRAM_nWE, .SDRAM_nRAS, .SDRAM_nCAS, .SDRAM_CKE,
         .SDRAM_CLK
     );

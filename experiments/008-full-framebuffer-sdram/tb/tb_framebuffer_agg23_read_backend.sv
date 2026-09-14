@@ -32,6 +32,8 @@ module tb_framebuffer_agg23_read_backend;
     wire sdram_dqml;
     wire sdram_dqmh;
     wire [15:0] sdram_dq;
+    wire [15:0] sdram_dq_out;
+    wire sdram_dq_oe;
     wire sdram_clk;
     integer word_index;
 
@@ -47,8 +49,11 @@ module tb_framebuffer_agg23_read_backend;
         .SDRAM_nCS(sdram_ncs), .SDRAM_nRAS(sdram_nras),
         .SDRAM_nCAS(sdram_ncas), .SDRAM_nWE(sdram_nwe),
         .SDRAM_DQML(sdram_dqml), .SDRAM_DQMH(sdram_dqmh),
-        .SDRAM_DQ(sdram_dq), .SDRAM_CLK(sdram_clk)
+        .sdram_dq_in(sdram_dq), .sdram_dq_out, .sdram_dq_oe,
+        .SDRAM_CLK(sdram_clk)
     );
+
+    assign sdram_dq = sdram_dq_oe ? sdram_dq_out : 16'hzzzz;
 
     agg23_sdram_pin_model memory (
         .clk(sdram_clk), .cke(sdram_cke), .ncs(sdram_ncs),

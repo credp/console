@@ -50,7 +50,12 @@ module sdram_burst #(
     output reg p0_ready = 0,  // The port has finished its task. Will rise for a single cycle
     output wire p0_data_available,
 
-    inout  wire [15:0] SDRAM_DQ,    // Bidirectional data bus
+    // Local framebuffer adaptation: make DQ ownership explicit. The original
+    // generic inout port is split so the experiment's pin mux is the only
+    // block connected directly to board DQ.
+    input  wire [15:0] SDRAM_DQ_IN,
+    output wire [15:0] SDRAM_DQ_OUT,
+    output wire        SDRAM_DQ_OE,
     output reg  [12:0] SDRAM_A,     // Address bus
     output reg  [ 1:0] SDRAM_DQM,   // High/low byte mask
     output reg  [ 1:0] SDRAM_BA,    // Bank select (single bits)
@@ -337,8 +342,9 @@ module sdram_burst #(
   reg dq_output = 0;
 
   reg [15:0] sdram_data = 0;
-  assign SDRAM_DQ = dq_output ? sdram_data : 16'hZZZZ;
-  assign p0_q = SDRAM_DQ;
+  assign SDRAM_DQ_OUT = sdram_data;
+  assign SDRAM_DQ_OE = dq_output;
+  assign p0_q = SDRAM_DQ_IN;
 
   assign init_complete = state != INIT;
 

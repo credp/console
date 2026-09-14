@@ -27,7 +27,11 @@ module framebuffer_sdram_write_phy (
     output logic        SDRAM_DQML,
     output logic        SDRAM_DQMH,
     inout  wire  [15:0] SDRAM_DQ,
-    output logic        SDRAM_CLK
+    output logic        SDRAM_CLK,
+    // Registered bundle for the later shared-pin mux. The direct DQ port is
+    // retained during the producer-only and one-shot bring-up stages.
+    output logic [15:0] SDRAM_DQ_OUT,
+    output logic        SDRAM_DQ_OE
 );
     logic [15:0] sdram_dq_out_q;
     logic sdram_dq_oe_q;
@@ -48,7 +52,9 @@ module framebuffer_sdram_write_phy (
         sdram_dq_oe_q <= protocol_dq_oe;
     end
 
-    assign SDRAM_DQ = sdram_dq_oe_q ? sdram_dq_out_q : 16'hzzzz;
+    assign SDRAM_DQ_OUT = sdram_dq_out_q;
+    assign SDRAM_DQ_OE = sdram_dq_oe_q;
+    assign SDRAM_DQ = SDRAM_DQ_OE ? SDRAM_DQ_OUT : 16'hzzzz;
 
     altddio_out #(.extend_oe_disable("OFF"),.intended_device_family("Cyclone V"),
         .invert_output("OFF"),.lpm_hint("UNUSED"),.lpm_type("altddio_out"),
