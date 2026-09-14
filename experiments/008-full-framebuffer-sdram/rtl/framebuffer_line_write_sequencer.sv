@@ -15,6 +15,10 @@ module framebuffer_line_write_sequencer #(
 
     output logic                       line_release_valid,
     output logic                       line_release_buffer,
+    // Pulses only after every chunk of the active line has completed. This is
+    // the safe observation point for the temporary producer-to-reader cut.
+    output logic                       line_write_complete,
+    output logic [9:0]                 line_write_complete_y,
 
     output logic                       writer_read_buffer,
     output logic [LINE_ADDR_WIDTH-1:0] writer_read_x,
@@ -85,6 +89,8 @@ module framebuffer_line_write_sequencer #(
 
     assign line_release_valid = (state == WRITER_RELEASE_LINE);
     assign line_release_buffer = active_buffer;
+    assign line_write_complete = line_release_valid;
+    assign line_write_complete_y = framebuffer_line_y;
 
     assign chunk_start_x = LINE_ADDR_WIDTH'(chunk_index * WRITE_CHUNK_WORDS);
     assign expected_completion_tag = {active_buffer, 7'(chunk_index)};

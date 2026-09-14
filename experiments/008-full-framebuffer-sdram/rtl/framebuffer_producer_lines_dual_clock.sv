@@ -6,7 +6,10 @@
 module framebuffer_producer_lines_dual_clock #(
     parameter integer FRAMEBUFFER_WIDTH = 1280,
     parameter integer FRAMEBUFFER_HEIGHT = 720,
-    parameter integer LINE_ADDR_WIDTH = 11
+    parameter integer LINE_ADDR_WIDTH = 11,
+    // Temporary first-picture mode. Remove this cut point when the completed
+    // experiment's transaction-boundary arbiter owns the producer schedule.
+    parameter integer STOP_AFTER_ONE_FRAME = 0
 ) (
     input  logic                         machine_clk,
     input  logic                         sdram_clk,
@@ -30,11 +33,14 @@ module framebuffer_producer_lines_dual_clock #(
     output logic                         stalled_waiting_for_free_line,
     output logic                         stalled_waiting_for_writer
 );
-    typedef enum logic [1:0] {
+    typedef enum logic [2:0] {
         PRODUCER_RESET,
         PRODUCER_FILL_LINE,
         PRODUCER_HAND_OFF_LINE,
-        PRODUCER_WAIT_FOR_FREE_LINE
+        PRODUCER_WAIT_FOR_FREE_LINE,
+        // The final line is already owned by the SDRAM writer. Do not begin a
+        // new frame while the temporary one-shot handoff is pending.
+        PRODUCER_STOPPED
     } producer_state_t;
 
     producer_state_t machine_state;
@@ -160,7 +166,10 @@ module framebuffer_producer_lines_dual_clock #(
                     end else if (line_accept_sync_2 != line_accept_seen) begin
                         line_accept_seen <= line_accept_sync_2;
                         buffer_owned_by_writer[working_buffer] <= 1'b1;
-                        if (next_working_buffer_free) begin
+                        if (STOP_AFTER_ONE_FRAME &&
+                            completed_line_y == 10'(FRAMEBUFFER_HEIGHT - 1)) begin
+                            machine_state <= PRODUCER_STOPPED;
+                        end else if (next_working_buffer_free) begin
                             working_buffer <= !working_buffer;
                             machine_state <= PRODUCER_FILL_LINE;
                         end else begin
@@ -174,6 +183,11 @@ module framebuffer_producer_lines_dual_clock #(
                         working_buffer <= !working_buffer;
                         machine_state <= PRODUCER_FILL_LINE;
                     end
+                end
+
+                PRODUCER_STOPPED: begin
+                    // The writer still drains the final handed-off line in
+                    // the SDRAM domain. Its completion is the later cut point.
                 end
 
                 default: machine_state <= PRODUCER_RESET;

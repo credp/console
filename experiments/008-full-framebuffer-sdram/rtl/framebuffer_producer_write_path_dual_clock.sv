@@ -5,7 +5,8 @@ module framebuffer_producer_write_path_dual_clock #(
     parameter integer FRAMEBUFFER_WIDTH = 1280,
     parameter integer FRAMEBUFFER_HEIGHT = 720,
     parameter integer LINE_ADDR_WIDTH = 11,
-    parameter integer WRITE_CHUNK_WORDS = 1280
+    parameter integer WRITE_CHUNK_WORDS = 1280,
+    parameter integer STOP_AFTER_ONE_FRAME = 0
 ) (
     input  logic        machine_clk,
     input  logic        sdram_clk,
@@ -32,7 +33,9 @@ module framebuffer_producer_write_path_dual_clock #(
     output logic        producer_stalled_waiting_for_free_line,
     output logic        producer_stalled_waiting_for_writer,
     output logic        writer_busy,
-    output logic        writer_error
+    output logic        writer_error,
+    output logic        line_write_complete,
+    output logic [9:0]  line_write_complete_y
 );
     logic line_ready_valid, line_ready_accept;
     logic line_ready_buffer, line_release_valid, line_release_buffer;
@@ -44,7 +47,8 @@ module framebuffer_producer_write_path_dual_clock #(
     framebuffer_producer_lines_dual_clock #(
         .FRAMEBUFFER_WIDTH(FRAMEBUFFER_WIDTH),
         .FRAMEBUFFER_HEIGHT(FRAMEBUFFER_HEIGHT),
-        .LINE_ADDR_WIDTH(LINE_ADDR_WIDTH)
+        .LINE_ADDR_WIDTH(LINE_ADDR_WIDTH),
+        .STOP_AFTER_ONE_FRAME(STOP_AFTER_ONE_FRAME)
     ) lines (
         .machine_clk(machine_clk), .sdram_clk(sdram_clk),
         .machine_reset(machine_reset), .sdram_reset(sdram_reset),
@@ -67,6 +71,8 @@ module framebuffer_producer_write_path_dual_clock #(
         .line_ready_valid(line_ready_valid), .line_ready_accept(line_ready_accept),
         .line_ready_buffer(line_ready_buffer), .line_ready_y(line_ready_y),
         .line_release_valid(line_release_valid), .line_release_buffer(line_release_buffer),
+        .line_write_complete(line_write_complete),
+        .line_write_complete_y(line_write_complete_y),
         .writer_read_buffer(writer_read_buffer), .writer_read_x(writer_read_x),
         .writer_read_pixel(writer_read_pixel),
         .req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),

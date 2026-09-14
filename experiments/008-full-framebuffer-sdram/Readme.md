@@ -114,6 +114,27 @@ The first implemented blocks are:
   occupied; consumer stall means its completed line is waiting for scanout to
   release the output buffer.
 
+### SDRAM ownership stages
+
+The first board-visible image may use a one-time ownership handoff: the
+producer writes one complete framebuffer, then the consumer takes sole control
+to scan it out. This is only a bring-up mode.
+
+Before this experiment is complete, one explicit SDRAM arbiter must own the
+physical pins and switch ownership between producer and consumer whenever the
+current transaction completes and the other client is waiting. It must never
+switch during an SDRAM command, data burst, refresh, or DQ turnaround. The
+transaction granularity is intentionally still open: the producer currently
+uses BL8 writes while the consumer cache captures 1024-word pages. Choosing
+that granularity is a later measured design decision, not an accidental side
+effect of the temporary handoff mode.
+
+The first scheduler policy will be work-conserving round robin. At each safe
+boundary it serves the only waiting client when there is one; when both are
+waiting, it grants the client that did not receive the previous transaction.
+Internal refresh and DQ turnaround remain part of the current owner's safe
+transaction completion, not client requests that the arbiter may reorder.
+
 `tb_framebuffer_write_read_path` joins the producer and consumer request ports
 to one simulated linear memory. It verifies every pixel after the round trip;
 it is a simulation integration point, not the future SDRAM controller.

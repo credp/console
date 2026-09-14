@@ -9,7 +9,8 @@ module framebuffer_producer_bl8_sdram_path #(
     parameter integer WRITE_CHUNK_WORDS = 1280,
     parameter longint unsigned SDRAM_FREQ_HZ = 100_000_000,
     parameter integer SDRAM_POWERUP_US = 200,
-    parameter longint unsigned REFRESH_INTERVAL_CYCLES = (SDRAM_FREQ_HZ * 70) / 10_000_000
+    parameter longint unsigned REFRESH_INTERVAL_CYCLES = (SDRAM_FREQ_HZ * 70) / 10_000_000,
+    parameter integer STOP_AFTER_ONE_FRAME = 0
 ) (
     input  logic        machine_clk,
     input  logic        sdram_clk,
@@ -18,6 +19,7 @@ module framebuffer_producer_bl8_sdram_path #(
     output logic        sdram_init_done,
     output logic        sdram_error,
     output logic        write_completion,
+    output logic        frame_write_complete,
 
     output logic [10:0] producer_pixel_x,
     output logic [9:0]  producer_line_y,
@@ -65,6 +67,8 @@ module framebuffer_producer_bl8_sdram_path #(
     logic phy_cke, phy_ncs, phy_nras, phy_ncas, phy_nwe;
     logic phy_dqml, phy_dqmh, phy_dq_oe;
     logic [15:0] phy_dq_out;
+    logic line_write_complete;
+    logic [9:0] line_write_complete_y;
 
     // init_done is generated in the SDRAM clock domain. Its synchronized copy
     // is the only reset-release information used by machine-clock logic.
@@ -93,7 +97,8 @@ module framebuffer_producer_bl8_sdram_path #(
         .FRAMEBUFFER_WIDTH(FRAMEBUFFER_WIDTH),
         .FRAMEBUFFER_HEIGHT(FRAMEBUFFER_HEIGHT),
         .LINE_ADDR_WIDTH(LINE_ADDR_WIDTH),
-        .WRITE_CHUNK_WORDS(WRITE_CHUNK_WORDS)
+        .WRITE_CHUNK_WORDS(WRITE_CHUNK_WORDS),
+        .STOP_AFTER_ONE_FRAME(STOP_AFTER_ONE_FRAME)
     ) producer (
         .machine_clk(machine_clk),
         .sdram_clk(sdram_clk),
@@ -120,8 +125,15 @@ module framebuffer_producer_bl8_sdram_path #(
         .producer_stalled_waiting_for_free_line(producer_stalled_waiting_for_free_line),
         .producer_stalled_waiting_for_writer(producer_stalled_waiting_for_writer),
         .writer_busy(writer_busy),
-        .writer_error(writer_error)
+        .writer_error(writer_error),
+        .line_write_complete(line_write_complete),
+        .line_write_complete_y(line_write_complete_y)
     );
+
+    // The final line has completed its final SDRAM request. A later temporary
+    // pin mux may hand control to the reader only after this pulse.
+    assign frame_write_complete = line_write_complete &&
+                                  line_write_complete_y == 10'(FRAMEBUFFER_HEIGHT - 1);
 
     framebuffer_bl8_write_backend #(
         .SDRAM_FREQ_HZ(SDRAM_FREQ_HZ),

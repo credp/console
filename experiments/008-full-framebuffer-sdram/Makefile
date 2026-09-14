@@ -1,7 +1,8 @@
 IVERILOG ?= iverilog
 VVP ?= vvp
+VERILATOR ?= verilator
 
-.PHONY: test test-agg23-burst-cache test-producer-bl8 test-producer-bl8-refresh test-producer-bl8-capacity test-producer-bl8-chunks waveform clean
+.PHONY: test test-agg23-burst-cache test-agg23-read-backend test-producer-bl8 test-producer-bl8-refresh test-producer-bl8-capacity test-producer-bl8-chunks waveform clean
 
 test: build/tb_framebuffer_pattern_pixel.vvp build/tb_framebuffer_machine_line_source.vvp build/tb_framebuffer_line_chunk_address.vvp build/tb_framebuffer_producer_lines.vvp build/tb_framebuffer_line_write_sequencer.vvp build/tb_framebuffer_producer_write_path.vvp build/tb_framebuffer_consumer_lines.vvp build/tb_framebuffer_line_read_sequencer.vvp build/tb_framebuffer_consumer_line_scheduler.vvp build/tb_framebuffer_scanout_timing_adapter.vvp build/tb_framebuffer_write_read_path.vvp
 	$(VVP) $<
@@ -33,6 +34,11 @@ test-producer-bl8-chunks: build/tb_framebuffer_producer_bl8_chunks.vvp
 
 test-agg23-burst-cache: build/tb_framebuffer_agg23_burst_cache.vvp
 	$(VVP) build/tb_framebuffer_agg23_burst_cache.vvp
+
+test-agg23-read-backend:
+	mkdir -p build/obj_agg23_read_backend
+	$(VERILATOR) --binary --timing -Wno-fatal --top-module tb_framebuffer_agg23_read_backend --Mdir build/obj_agg23_read_backend -o ../tb_framebuffer_agg23_read_backend rtl/framebuffer_agg23_burst_cache.sv rtl/third-party/agg23_sdram_burst.sv rtl/framebuffer_agg23_read_backend.sv tb/agg23_sdram_pin_model.sv tb/tb_framebuffer_agg23_read_backend.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv
+	build/tb_framebuffer_agg23_read_backend
 
 build/tb_framebuffer_pattern_pixel.vvp: rtl/framebuffer_pattern_pixel.sv tb/tb_framebuffer_pattern_pixel.sv
 	mkdir -p build
