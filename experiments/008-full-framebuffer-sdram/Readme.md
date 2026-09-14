@@ -101,6 +101,9 @@ The first implemented blocks are:
 - `framebuffer_consumer_line_scheduler`, the explicit owner of consumer line
   order. It prefetches the next framebuffer line and only permits the scanout
   line transition after that fill is complete;
+- `framebuffer_scanout_timing_adapter`, the small boundary block between an
+  existing raster and framebuffer scanout. It forwards active-video X/Y and
+  identifies active line starts; it does not generate timing itself.
 - `framebuffer_transfer_statistics`, a separate machine-state block that owns
   saturating cycle counters. Producer idle means its write sequencer is idle;
   consumer idle means its read sequencer is idle. Producer stall combines a
