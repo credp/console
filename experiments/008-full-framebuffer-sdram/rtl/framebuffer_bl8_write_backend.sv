@@ -2,7 +2,8 @@
 
 module framebuffer_bl8_write_backend #(
     parameter longint unsigned SDRAM_FREQ_HZ = 100_000_000,
-    parameter integer POWERUP_US = 200
+    parameter integer POWERUP_US = 200,
+    parameter longint unsigned REFRESH_INTERVAL_CYCLES = (SDRAM_FREQ_HZ * 70) / 10_000_000
 ) (
     input  logic        clk,
     input  logic        reset,
@@ -77,7 +78,9 @@ module framebuffer_bl8_write_backend #(
         WRITE_CMD,
         WRITE_DATA,
         WAIT_WRITE_TO_PRECHARGE,
-        COMPLETE
+        COMPLETE,
+        RUNTIME_REFRESH,
+        WAIT_RUNTIME_REFRESH
     } state_t;
 
     state_t state;
@@ -103,6 +106,11 @@ module framebuffer_bl8_write_backend #(
     logic [1:0] dqm_q;
     logic dq_oe_q;
     logic error_q;
+    logic [31:0] refresh_count;
+    logic refresh_due;
+    logic precharge_then_refresh_q;
+    logic refresh_resume_activate_q;
+    logic refresh_resume_collect_q;
     (* altera_attribute = {"-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS"} *) logic reset_sync_meta = 1'b1;
     (* altera_attribute = {"-name SYNCHRONIZER_IDENTIFICATION FORCED_IF_ASYNCHRONOUS"} *) logic reset_sync = 1'b1;
 
@@ -113,7 +121,7 @@ module framebuffer_bl8_write_backend #(
     assign next_word_addr = address_q[25:1] + {9'b0, word_index_q};
 
     assign init_done = state >= IDLE;
-    assign req_ready = state == IDLE;
+    assign req_ready = (state == IDLE) && !refresh_due;
     assign write_ready = state == COLLECT;
     assign read_valid = 1'b0;
     assign read_data = 16'h0000;
@@ -130,6 +138,11 @@ module framebuffer_bl8_write_backend #(
         .datain_h(1'b0),.datain_l(1'b1),.outclock(clk),.dataout(SDRAM_CLK),
         .oe(1'b1),.outclocken(1'b1)
     );
+
+    initial begin
+        if (REFRESH_INTERVAL_CYCLES <= TRFC_CYCLES)
+            $error("refresh interval must exceed tRFC");
+    end
 
     always_ff @(posedge clk) begin
         reset_sync_meta <= reset;
@@ -158,9 +171,21 @@ module framebuffer_bl8_write_backend #(
             dqm_q <= 2'b11;
             dq_oe_q <= 1'b0;
             error_q <= 1'b0;
+            refresh_count <= REFRESH_INTERVAL_CYCLES[31:0];
+            refresh_due <= 1'b0;
+            precharge_then_refresh_q <= 1'b0;
+            refresh_resume_activate_q <= 1'b0;
+            refresh_resume_collect_q <= 1'b0;
         end else begin
             command <= CMD_NOP;
             dq_oe_q <= 1'b0;
+
+            if ((state >= IDLE) && !refresh_due) begin
+                if (refresh_count == 0)
+                    refresh_due <= 1'b1;
+                else
+                    refresh_count <= refresh_count - 1'b1;
+            end
 
             case (state)
                 INIT_WAIT: begin
@@ -218,7 +243,11 @@ module framebuffer_bl8_write_backend #(
                         wait_count <= wait_count - 1'b1;
                 end
                 IDLE: begin
-                    if (req_valid && req_ready) begin
+                    if (refresh_due) begin
+                        refresh_resume_activate_q <= 1'b0;
+                        refresh_resume_collect_q <= 1'b0;
+                        state <= RUNTIME_REFRESH;
+                    end else if (req_valid && req_ready) begin
                         address_q <= req_byte_address;
                         words_q <= req_words;
                         tag_q <= req_tag;
@@ -227,6 +256,7 @@ module framebuffer_bl8_write_backend #(
                         row_open_q <= 1'b0;
                         precharge_then_complete_q <= 1'b0;
                         precharge_then_activate_q <= 1'b0;
+                        precharge_then_refresh_q <= 1'b0;
                         error_q <= !req_write || req_words == 16'd0 || req_byte_address[0] ||
                                    req_words[2:0] != 3'b000;
                         if (!req_write || req_words == 16'd0 || req_byte_address[0] ||
@@ -252,6 +282,7 @@ module framebuffer_bl8_write_backend #(
                             else if (row_open_q) begin
                                 precharge_then_complete_q <= 1'b0;
                                 precharge_then_activate_q <= 1'b1;
+                                precharge_then_refresh_q <= 1'b0;
                                 state <= PRECHARGE_OPEN;
                             end else begin
                                 state <= ACTIVATE;
@@ -273,6 +304,11 @@ module framebuffer_bl8_write_backend #(
                     if (wait_count == 0) begin
                         if (precharge_then_complete_q)
                             state <= COMPLETE;
+                        else if (precharge_then_refresh_q) begin
+                            refresh_resume_activate_q <= precharge_then_activate_q;
+                            refresh_resume_collect_q <= !precharge_then_activate_q;
+                            state <= RUNTIME_REFRESH;
+                        end
                         else if (precharge_then_activate_q)
                             state <= ACTIVATE;
                         else
@@ -328,6 +364,9 @@ module framebuffer_bl8_write_backend #(
                         end else if (next_word_addr[24:10] != burst_word_addr[24:10]) begin
                             wait_count <= TWRP_CYCLES[31:0];
                             state <= WAIT_WRITE_TO_PRECHARGE;
+                        end else if (refresh_due) begin
+                            wait_count <= TWRP_CYCLES[31:0];
+                            state <= WAIT_WRITE_TO_PRECHARGE;
                         end else begin
                             state <= COLLECT;
                         end
@@ -350,6 +389,7 @@ module framebuffer_bl8_write_backend #(
                         end else begin
                             precharge_then_complete_q <= 1'b0;
                             precharge_then_activate_q <= 1'b0;
+                            precharge_then_refresh_q <= refresh_due;
                             state <= PRECHARGE_OPEN;
                         end
                     end else begin
@@ -359,6 +399,31 @@ module framebuffer_bl8_write_backend #(
                 COMPLETE: begin
                     if (completion_ready)
                         state <= IDLE;
+                end
+
+                RUNTIME_REFRESH: begin
+                    command <= CMD_REFRESH;
+                    wait_count <= TRFC_CYCLES[31:0];
+                    state <= WAIT_RUNTIME_REFRESH;
+                end
+
+                WAIT_RUNTIME_REFRESH: begin
+                    if (wait_count == 0) begin
+                        refresh_count <= REFRESH_INTERVAL_CYCLES[31:0];
+                        refresh_due <= 1'b0;
+                        precharge_then_refresh_q <= 1'b0;
+                        if (refresh_resume_activate_q) begin
+                            refresh_resume_activate_q <= 1'b0;
+                            state <= ACTIVATE;
+                        end else if (refresh_resume_collect_q) begin
+                            refresh_resume_collect_q <= 1'b0;
+                            state <= COLLECT;
+                        end else begin
+                            state <= IDLE;
+                        end
+                    end else begin
+                        wait_count <= wait_count - 1'b1;
+                    end
                 end
                 default: state <= INIT_WAIT;
             endcase

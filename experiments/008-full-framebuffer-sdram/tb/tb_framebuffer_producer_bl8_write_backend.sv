@@ -7,7 +7,9 @@ module tb_framebuffer_producer_bl8_write_backend #(
     parameter integer TEST_HEIGHT = 4,
     parameter integer TEST_ADDR_WIDTH = 3,
     parameter integer TEST_CHUNK_WORDS = 8,
-    parameter integer REQUIRE_PRODUCER_STALL = 0
+    parameter integer REQUIRE_PRODUCER_STALL = 0,
+    parameter integer REFRESH_INTERVAL_CYCLES = 700,
+    parameter integer REQUIRE_RUNTIME_REFRESH = 0
 );
     localparam integer CHUNKS_PER_LINE = TEST_WIDTH / TEST_CHUNK_WORDS;
     localparam integer COMPLETIONS_TO_CHECK = (TEST_HEIGHT + 1) * CHUNKS_PER_LINE;
@@ -52,6 +54,7 @@ module tb_framebuffer_producer_bl8_write_backend #(
     logic sdram_clk;
     integer completion_count;
     integer producer_stall_cycle_count;
+    integer runtime_refresh_count;
     integer line_index;
     integer word_index;
     logic [15:0] expected;
@@ -95,7 +98,8 @@ module tb_framebuffer_producer_bl8_write_backend #(
 
     framebuffer_bl8_write_backend #(
         .SDRAM_FREQ_HZ(100_000_000),
-        .POWERUP_US(1)
+        .POWERUP_US(1),
+        .REFRESH_INTERVAL_CYCLES(REFRESH_INTERVAL_CYCLES)
     ) backend (
         .clk(clk),
         .reset(reset),
@@ -172,6 +176,7 @@ module tb_framebuffer_producer_bl8_write_backend #(
             completion_count <= 0;
             saw_producer_stall <= 1'b0;
             producer_stall_cycle_count <= 0;
+            runtime_refresh_count <= 0;
         end else begin
             if (completion_valid && completion_ready)
                 completion_count <= completion_count + 1;
@@ -179,6 +184,8 @@ module tb_framebuffer_producer_bl8_write_backend #(
                 saw_producer_stall <= 1'b1;
                 producer_stall_cycle_count <= producer_stall_cycle_count + 1;
             end
+            if ({sdram_nras, sdram_ncas, sdram_nwe} == 3'b001)
+                runtime_refresh_count <= runtime_refresh_count + 1;
         end
     end
 
@@ -219,9 +226,11 @@ module tb_framebuffer_producer_bl8_write_backend #(
 
         if (REQUIRE_PRODUCER_STALL && !saw_producer_stall)
             $fatal(1, "expected the producer to stall behind the BL8 backend");
+        if (REQUIRE_RUNTIME_REFRESH && runtime_refresh_count == 0)
+            $fatal(1, "expected at least one runtime refresh command");
 
-        $display("PASS framebuffer_producer_bl8_write_backend: producer writes through BL8 SDRAM backend stall_cycles=%0d",
-                 producer_stall_cycle_count);
+        $display("PASS framebuffer_producer_bl8_write_backend: producer writes through BL8 SDRAM backend stall_cycles=%0d runtime_refreshes=%0d",
+                 producer_stall_cycle_count, runtime_refresh_count);
         $finish;
     end
 

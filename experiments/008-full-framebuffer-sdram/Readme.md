@@ -117,7 +117,8 @@ it is a simulation integration point, not the future SDRAM controller.
 
 `framebuffer_bl8_write_backend` is the experiment-local copy of experiment
 007's small BL8 write engine, including the word-0 alignment correction proven
-by the pin-model test. `tb_framebuffer_producer_bl8_write_backend` directly
+by the pin-model test. It services periodic refresh requests between safe BL8
+write boundaries. `tb_framebuffer_producer_bl8_write_backend` directly
 connects the producer to it and the SDRAM pin model. The backend is listed for
 Quartus but is not yet connected to the experiment's hardware top level.
 
@@ -140,6 +141,12 @@ To run the physical BL8 write compatibility test and inspect its waveform:
 ```bash
 make test-producer-bl8
 gtkwave build/framebuffer_producer_bl8_write_backend.vcd
+```
+
+To force frequent runtime refreshes while checking that writes still complete:
+
+```bash
+make test-producer-bl8-refresh
 ```
 
 To run the same test with real 1280-word lines, including SDRAM row crossings
