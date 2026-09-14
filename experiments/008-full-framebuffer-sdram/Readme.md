@@ -157,6 +157,22 @@ command, mask, write-data and output-enable registers plus the inverted
 forwarded SDRAM clock. Quartus 17 packed those registers into the SDRAM I/O
 cells in the first hardware build.
 
+The read path currently captures SDRAM DQ in
+`framebuffer_agg23_read_backend` before presenting it to the burst cache. This
+register is required at 142.857 MHz: routing raw board DQ directly into an
+M10K write port produced an impossible pin-to-RAM timing path. It is a
+temporary placement made to adapt the MIT reader, which exposes raw DQ.
+
+The intended end-state is stronger than shared DQ registers: exactly one
+`framebuffer_sdram_phy` block must own every architecturally physical SDRAM
+signal: forwarded clock, command/address, bank, masks, DQ data, DQ direction,
+and DQ capture. The BL8 writer and burst reader must stop at an internal
+request/response protocol above that boundary. Their copied controller logic
+currently retains parts of physical-pin ownership, and the transitional pin
+mux exists only to make that mismatch board-testable. Replace those two
+half-PHYs with protocol clients of the single PHY before considering the
+framebuffer architecture complete.
+
 `raster_720p` is the locally copied timing generator from experiment 003. It
 provides the 1280x720 active-video X/Y/DE contract needed by the framebuffer
 consumer.

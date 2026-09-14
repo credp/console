@@ -45,5 +45,7 @@ module tb_framebuffer_agg23_burst_cache;
         if (starts != 2) $fatal(1,"second page fetch missing");
         $display("PASS agg23 burst cache: full-page capture, cache hit, paced reads"); $finish;
     end
-    initial begin repeat(3000) @(posedge clk); $fatal(1,"burst cache watchdog"); end
+    // The synchronous M10K read port deliberately adds a request cycle per
+    // returned word, so leave room for three paced reads plus two page fills.
+    initial begin repeat(8000) @(posedge clk); $fatal(1,"burst cache watchdog"); end
 endmodule

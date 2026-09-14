@@ -588,29 +588,10 @@ module sdram_burst #(
     end
   end
 
-  // This DDIO block doesn't double the clock, it just relocates the RAM clock to trigger
-  // on the negative edge
-  altddio_out #(
-      .extend_oe_disable("OFF"),
-      .intended_device_family("Cyclone V"),
-      .invert_output("OFF"),
-      .lpm_hint("UNUSED"),
-      .lpm_type("altddio_out"),
-      .oe_reg("UNREGISTERED"),
-      .power_up_high("OFF"),
-      .width(1)
-  ) sdramclk_ddr (
-      .datain_h(1'b0),
-      .datain_l(1'b1),
-      .outclock(clk),
-      .dataout(SDRAM_CLK),
-      .oe(1'b1),
-      .outclocken(1'b1)
-      // .aclr(),
-      // .aset(),
-      // .sclr(),
-      // .sset()
-  );
+  // Experiment 008 has two temporary clients sharing physical SDRAM pins.
+  // The single board-level DDIO clock therefore lives after their pin mux;
+  // this local signal remains for standalone simulation and composition.
+  assign SDRAM_CLK = ~clk;
 
   ////////////////////////////////////////////////////////////////////////////////////////
   // Parameter validation

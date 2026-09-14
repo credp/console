@@ -56,11 +56,8 @@ module framebuffer_sdram_write_phy (
     assign SDRAM_DQ_OE = sdram_dq_oe_q;
     assign SDRAM_DQ = SDRAM_DQ_OE ? SDRAM_DQ_OUT : 16'hzzzz;
 
-    altddio_out #(.extend_oe_disable("OFF"),.intended_device_family("Cyclone V"),
-        .invert_output("OFF"),.lpm_hint("UNUSED"),.lpm_type("altddio_out"),
-        .oe_reg("UNREGISTERED"),.power_up_high("OFF"),.width(1)) sdramclk_ddr
-    (
-        .datain_h(1'b0),.datain_l(1'b1),.outclock(clk),.dataout(SDRAM_CLK),
-        .oe(1'b1),.outclocken(1'b1)
-    );
+    // The board-level clock DDIO now lives after the producer/reader pin mux.
+    // This retained raw clock marker keeps the local interface useful in the
+    // standalone producer test without creating a second physical DDIO.
+    assign SDRAM_CLK = ~clk;
 endmodule

@@ -10,12 +10,15 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_consumer_lines.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_consumer_lines_dual_clock.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_line_read_sequencer.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_consumer_read_path.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_consumer_read_path_dual_clock.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_consumer_line_scheduler.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_agg23_burst_cache.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/third-party/agg23_sdram_burst.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_agg23_read_backend.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_one_shot_handoff.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_sdram_pin_mux.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_sdram_clock_forward.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_sdram_phy.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/raster_720p.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_scanout_timing_adapter.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_bl8_write_backend.sv

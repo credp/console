@@ -11,10 +11,11 @@ module tb_framebuffer_one_shot_handoff;
             $fatal(1, "wrong initial ownership");
         @(negedge clk); frame_write_complete = 1;
         @(posedge clk); @(negedge clk); frame_write_complete = 0;
-        if (producer_owns_sdram || reader_reset || reader_owns_sdram)
-            $fatal(1, "reader was not held through initialization");
+        if (producer_owns_sdram || reader_reset || !reader_owns_sdram || framebuffer_ready)
+            $fatal(1, "reader did not receive pins for initialization");
         repeat(3) @(posedge clk);
-        if (reader_owns_sdram) $fatal(1, "reader owned pins before init done");
+        if (!reader_owns_sdram || framebuffer_ready)
+            $fatal(1, "reader ownership or ready state was wrong during init");
         @(negedge clk); reader_init_done = 1;
         @(posedge clk); #1;
         if (!reader_owns_sdram || !framebuffer_ready || producer_owns_sdram)

@@ -141,11 +141,16 @@ wire producer_stalled_waiting_for_free_line;
 wire producer_stalled_waiting_for_writer;
 wire writer_busy;
 wire writer_error;
+wire frame_write_complete;
+wire [12:0] producer_sdram_a;
+wire [1:0] producer_sdram_ba;
+wire producer_sdram_cke, producer_sdram_ncs, producer_sdram_nras, producer_sdram_ncas, producer_sdram_nwe;
+wire producer_sdram_dqml, producer_sdram_dqmh, producer_sdram_clk, producer_sdram_dq_oe;
+wire [15:0] producer_sdram_dq, producer_sdram_dq_out;
 
-// This is intentionally producer-only. The consumer and HDMI scanout remain
-// disconnected until their separately verified SDRAM read path is ready.
 framebuffer_producer_bl8_sdram_path #(
-	.SDRAM_FREQ_HZ(142_857_000)
+	.SDRAM_FREQ_HZ(142_857_000),
+	.STOP_AFTER_ONE_FRAME(1)
 ) framebuffer_producer (
 	.machine_clk(clk_sys),
 	.sdram_clk(clk_sdram),
@@ -153,6 +158,7 @@ framebuffer_producer_bl8_sdram_path #(
 	.sdram_init_done(sdram_init_done),
 	.sdram_error(sdram_error),
 	.write_completion(write_completion),
+	.frame_write_complete(frame_write_complete),
 	.producer_pixel_x(producer_pixel_x),
 	.producer_line_y(producer_line_y),
 	.producer_frame_index(producer_frame_index),
@@ -160,70 +166,153 @@ framebuffer_producer_bl8_sdram_path #(
 	.producer_stalled_waiting_for_writer(producer_stalled_waiting_for_writer),
 	.writer_busy(writer_busy),
 	.writer_error(writer_error),
-	.SDRAM_A(SDRAM_A),
-	.SDRAM_BA(SDRAM_BA),
-	.SDRAM_CKE(SDRAM_CKE),
-	.SDRAM_nCS(SDRAM_nCS),
-	.SDRAM_nRAS(SDRAM_nRAS),
-	.SDRAM_nCAS(SDRAM_nCAS),
-	.SDRAM_nWE(SDRAM_nWE),
-	.SDRAM_DQML(SDRAM_DQML),
-	.SDRAM_DQMH(SDRAM_DQMH),
-	.SDRAM_DQ(SDRAM_DQ),
-	.SDRAM_CLK(SDRAM_CLK)
+	.SDRAM_A(producer_sdram_a), .SDRAM_BA(producer_sdram_ba),
+	.SDRAM_CKE(producer_sdram_cke), .SDRAM_nCS(producer_sdram_ncs),
+	.SDRAM_nRAS(producer_sdram_nras), .SDRAM_nCAS(producer_sdram_ncas),
+	.SDRAM_nWE(producer_sdram_nwe), .SDRAM_DQML(producer_sdram_dqml),
+	.SDRAM_DQMH(producer_sdram_dqmh), .SDRAM_DQ(producer_sdram_dq),
+	.SDRAM_CLK(producer_sdram_clk), .sdram_dq_out(producer_sdram_dq_out),
+	.sdram_dq_oe(producer_sdram_dq_oe)
 );
 
-wire [1:0] col = status[4:3];
-
-wire HBlank;
-wire HSync;
-wire VBlank;
-wire VSync;
-wire ce_pix;
-wire hvcnt_atzero;
-wire [7:0] video;
-
-// Leave H/V sync always on. This stabilizes the video output while the core
-// is in reset. This example releases the reset when H/V counters are at zero.
-reg reset_core = 1;
-always @(posedge clk_sys) begin
-	if(reset) reset_core <= 1;
-	else if(hvcnt_atzero) reset_core <= 0;
+// The temporary handoff controls the physical-pin mux, so it must run in the
+// SDRAM clock domain with the producer completion and reader-init signals it
+// observes. The final arbiter will replace this policy, but keeps this clock
+// ownership rule.
+reg sdram_reset_sync_meta, sdram_reset_sync;
+always @(posedge clk_sdram) begin
+	if (reset) begin
+		sdram_reset_sync_meta <= 1'b1;
+		sdram_reset_sync <= 1'b1;
+	end else begin
+		sdram_reset_sync_meta <= 1'b0;
+		sdram_reset_sync <= sdram_reset_sync_meta;
+	end
 end
 
-mycore mycore
-(
-	.clk(clk_sys),
-	.reset(reset_core),
+wire producer_owns_sdram, reader_reset, reader_owns_sdram, framebuffer_ready_sdram;
+wire sdram_clk_mux_unused;
+framebuffer_one_shot_handoff handoff (
+	.clk(clk_sdram), .reset(sdram_reset_sync), .frame_write_complete,
+	.reader_init_done, .producer_owns_sdram,
+	.reader_reset, .reader_owns_sdram, .framebuffer_ready(framebuffer_ready_sdram)
+);
 
-	.pal(status[2]),
-	.scandouble(forced_scandoubler),
+wire reader_reset_sdram = sdram_reset_sync | reader_reset;
 
-	.ce_pix(ce_pix),
-	.hvcnt_atzero(hvcnt_atzero),
+wire reader_init_done;
+wire [12:0] reader_sdram_a;
+wire [1:0] reader_sdram_ba;
+wire reader_sdram_cke, reader_sdram_ncs, reader_sdram_nras, reader_sdram_ncas, reader_sdram_nwe;
+wire reader_sdram_dqml, reader_sdram_dqmh, reader_sdram_clk, reader_sdram_dq_oe;
+wire [15:0] reader_sdram_dq_out;
+wire [15:0] sdram_dq_capture;
+wire reader_req_valid, reader_req_ready, reader_req_write, reader_read_valid, reader_read_ready;
+wire [26:0] reader_req_byte_address;
+wire [15:0] reader_req_words, reader_read_data, reader_completion_words;
+wire [7:0] reader_req_tag, reader_completion_tag;
+wire reader_completion_valid, reader_completion_ready, reader_completion_error;
 
-	.HBlank(HBlank),
-	.HSync(HSync),
-	.VBlank(VBlank),
-	.VSync(VSync),
+// Scanout and the user LED are the only consumers outside clk_sdram of the
+// one-shot completion flag. Keep that crossing away from SDRAM pin control.
+reg framebuffer_ready_sync_meta, framebuffer_ready;
+always @(posedge clk_sys) begin
+	if (reset) begin
+		framebuffer_ready_sync_meta <= 1'b0;
+		framebuffer_ready <= 1'b0;
+	end else begin
+		framebuffer_ready_sync_meta <= framebuffer_ready_sdram;
+		framebuffer_ready <= framebuffer_ready_sync_meta;
+	end
+end
 
-	.video(video)
+framebuffer_agg23_read_backend #(.SDRAM_FREQ_MHZ(143), .PHY_DQ_CAPTURE_STAGES(1)) framebuffer_reader (
+	.clk(clk_sdram), .reset(reader_reset_sdram),
+	.req_valid(reader_req_valid), .req_ready(reader_req_ready), .req_write(reader_req_write),
+	.req_byte_address(reader_req_byte_address), .req_words(reader_req_words), .req_tag(reader_req_tag),
+	.read_valid(reader_read_valid), .read_ready(reader_read_ready), .read_data(reader_read_data),
+	.completion_valid(reader_completion_valid), .completion_ready(reader_completion_ready),
+	.completion_tag(reader_completion_tag), .completion_words(reader_completion_words),
+	.completion_error(reader_completion_error), .init_done(reader_init_done),
+	.SDRAM_A(reader_sdram_a), .SDRAM_BA(reader_sdram_ba), .SDRAM_CKE(reader_sdram_cke),
+	.SDRAM_nCS(reader_sdram_ncs), .SDRAM_nRAS(reader_sdram_nras), .SDRAM_nCAS(reader_sdram_ncas),
+	.SDRAM_nWE(reader_sdram_nwe), .SDRAM_DQML(reader_sdram_dqml), .SDRAM_DQMH(reader_sdram_dqmh),
+	.sdram_dq_in(sdram_dq_capture), .sdram_dq_out(reader_sdram_dq_out), .sdram_dq_oe(reader_sdram_dq_oe),
+	.SDRAM_CLK(reader_sdram_clk)
+);
+
+wire [10:0] raster_x;
+wire [9:0] raster_y;
+wire raster_de, raster_hsync, raster_vsync, raster_frame_start;
+raster_720p raster (
+	.clk(clk_sys), .reset(reset), .x(raster_x), .y(raster_y), .de(raster_de),
+	.hsync(raster_hsync), .vsync(raster_vsync), .frame_start(raster_frame_start),
+	.de_raw(), .hsync_raw(), .vsync_raw()
+);
+
+wire [15:0] scanout_pixel;
+wire scanout_pixel_valid, scanout_underflow, consumer_primed;
+wire [9:0] scanout_line_y;
+wire [15:0] scanout_skipped_lines;
+wire reader_busy, reader_error, consumer_waiting_for_output_release, consumer_overwrite_error;
+wire [9:0] next_framebuffer_line_y;
+wire scheduler_waiting_for_scanout, scheduler_timing_error;
+reg consumer_primed_sync_1, consumer_primed_sync_2, scanout_started;
+always @(posedge clk_sys) begin
+	if (reset || !framebuffer_ready) begin
+		consumer_primed_sync_1 <= 0; consumer_primed_sync_2 <= 0; scanout_started <= 0;
+	end else begin
+		consumer_primed_sync_1 <= consumer_primed;
+		consumer_primed_sync_2 <= consumer_primed_sync_1;
+		if (raster_frame_start && consumer_primed_sync_2) scanout_started <= 1;
+	end
+end
+wire scanout_start = raster_frame_start && consumer_primed_sync_2 && !scanout_started;
+
+framebuffer_consumer_read_path_dual_clock consumer (
+	.fill_clk(clk_sdram), .fill_reset(reader_reset_sdram | !reader_init_done),
+	.scanout_clk(clk_sys), .scanout_reset(reset | !framebuffer_ready),
+	.scanout_start, .scanout_line_advance(raster_de && raster_x == 0 && raster_y != 0 && scanout_started),
+	.scanout_x(raster_x), .scanout_pixel, .scanout_pixel_valid, .scanout_line_y,
+	.scanout_underflow, .scanout_skipped_lines, .consumer_primed,
+	.req_valid(reader_req_valid), .req_ready(reader_req_ready), .req_write(reader_req_write),
+	.req_byte_address(reader_req_byte_address), .req_words(reader_req_words), .req_tag(reader_req_tag),
+	.read_valid(reader_read_valid), .read_ready(reader_read_ready), .read_data(reader_read_data),
+	.completion_valid(reader_completion_valid), .completion_ready(reader_completion_ready),
+	.completion_tag(reader_completion_tag), .completion_words(reader_completion_words),
+	.completion_error(reader_completion_error), .reader_busy, .reader_error,
+	.consumer_waiting_for_output_release, .consumer_overwrite_error,
+	.next_framebuffer_line_y, .scheduler_waiting_for_scanout, .scheduler_timing_error
+);
+
+framebuffer_sdram_phy sdram_phy (
+	.clk(clk_sdram), .producer_owns(producer_owns_sdram), .reader_owns(reader_owns_sdram),
+	.producer_a(producer_sdram_a), .producer_ba(producer_sdram_ba), .producer_cke(producer_sdram_cke),
+	.producer_ncs(producer_sdram_ncs), .producer_nras(producer_sdram_nras), .producer_ncas(producer_sdram_ncas),
+	.producer_nwe(producer_sdram_nwe), .producer_dqml(producer_sdram_dqml), .producer_dqmh(producer_sdram_dqmh),
+	.producer_dq_out(producer_sdram_dq_out), .producer_dq_oe(producer_sdram_dq_oe),
+	.reader_a(reader_sdram_a), .reader_ba(reader_sdram_ba), .reader_cke(reader_sdram_cke),
+	.reader_ncs(reader_sdram_ncs), .reader_nras(reader_sdram_nras), .reader_ncas(reader_sdram_ncas),
+	.reader_nwe(reader_sdram_nwe), .reader_dqml(reader_sdram_dqml), .reader_dqmh(reader_sdram_dqmh),
+	.reader_dq_out(reader_sdram_dq_out), .reader_dq_oe(reader_sdram_dq_oe),
+	.SDRAM_A, .SDRAM_BA, .SDRAM_CKE, .SDRAM_nCS, .SDRAM_nRAS, .SDRAM_nCAS, .SDRAM_nWE,
+	.dq_capture(sdram_dq_capture), .SDRAM_DQML, .SDRAM_DQMH, .SDRAM_DQ, .SDRAM_CLK
 );
 
 assign CLK_VIDEO = clk_sys;
-assign CE_PIXEL = ce_pix;
-
-assign VGA_DE = ~(HBlank | VBlank);
-assign VGA_HS = HSync;
-assign VGA_VS = VSync;
-assign VGA_G  = (!col || col == 2) ? video : 8'd0;
-assign VGA_R  = (!col || col == 1) ? video : 8'd0;
-assign VGA_B  = (!col || col == 3) ? video : 8'd0;
+assign CE_PIXEL = 1'b1;
+assign VGA_DE = raster_de && scanout_pixel_valid && (scanout_line_y == raster_y);
+assign VGA_HS = raster_hsync;
+assign VGA_VS = raster_vsync;
+assign VGA_R = VGA_DE ? {scanout_pixel[15:11], scanout_pixel[15:13]} : 8'h00;
+assign VGA_G = VGA_DE ? {scanout_pixel[10:5], scanout_pixel[10:9]} : 8'h00;
+assign VGA_B = VGA_DE ? {scanout_pixel[4:0], scanout_pixel[4:2]} : 8'h00;
 
 reg  [26:0] act_cnt;
 always @(posedge clk_sys) act_cnt <= act_cnt + 1'd1;
-// Off during SDRAM initialization, solid after it, and flashing for any
-// producer/backend error. Frame completion is visible in SignalTap.
-assign LED_USER = (sdram_error || writer_error) ? act_cnt[24] : sdram_init_done;
+// Bring-up visibility: initialization is solid, framebuffer-ready is a slow
+// blink, and an SDRAM/reader/line-ownership error flashes rapidly.
+assign LED_USER = (sdram_error || writer_error || reader_error || consumer_overwrite_error) ? act_cnt[24] :
+                  framebuffer_ready ? act_cnt[26] : sdram_init_done;
 
 endmodule

@@ -71,6 +71,7 @@ module framebuffer_producer_bl8_sdram_path #(
     logic [15:0] phy_dq_out;
     logic line_write_complete;
     logic [9:0] line_write_complete_y;
+    logic frame_write_complete_latched;
 
     // init_done is generated in the SDRAM clock domain. Its synchronized copy
     // is the only reset-release information used by machine-clock logic.
@@ -132,10 +133,18 @@ module framebuffer_producer_bl8_sdram_path #(
         .line_write_complete_y(line_write_complete_y)
     );
 
-    // The final line has completed its final SDRAM request. A later temporary
-    // pin mux may hand control to the reader only after this pulse.
-    assign frame_write_complete = line_write_complete &&
-                                  line_write_complete_y == 10'(FRAMEBUFFER_HEIGHT - 1);
+    // The final line has completed its final SDRAM request. Keep that fact
+    // asserted for the one-shot handoff, which observes it from machine_clk.
+    // A one-sdram-clock pulse would be too short to cross that boundary.
+    always_ff @(posedge sdram_clk) begin
+        if (reset) begin
+            frame_write_complete_latched <= 1'b0;
+        end else if (line_write_complete &&
+                     line_write_complete_y == 10'(FRAMEBUFFER_HEIGHT - 1)) begin
+            frame_write_complete_latched <= 1'b1;
+        end
+    end
+    assign frame_write_complete = frame_write_complete_latched;
 
     framebuffer_bl8_write_backend #(
         .SDRAM_FREQ_HZ(SDRAM_FREQ_HZ),

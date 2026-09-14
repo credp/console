@@ -24,8 +24,11 @@ module framebuffer_one_shot_handoff (
     assign producer_owns_sdram = (state == HANDOFF_PRODUCER);
     // Keep the reader reset until the writer's final transaction has ended.
     assign reader_reset = (state == HANDOFF_PRODUCER);
-    assign reader_owns_sdram = (state == HANDOFF_READER);
-    assign framebuffer_ready = reader_owns_sdram;
+    // The reader needs the physical pins for its own SDRAM initialization.
+    // Ownership therefore begins as soon as the final writer transaction has
+    // finished, while framebuffer_ready remains low until that init completes.
+    assign reader_owns_sdram = (state != HANDOFF_PRODUCER);
+    assign framebuffer_ready = (state == HANDOFF_READER);
 
     always_ff @(posedge clk) begin
         if (reset) begin
