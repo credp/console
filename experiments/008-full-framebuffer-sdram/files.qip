@@ -15,6 +15,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/third-party/agg23_sdram_burst
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_agg23_read_backend.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_one_shot_handoff.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_sdram_pin_mux.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/raster_720p.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_scanout_timing_adapter.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_bl8_write_backend.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_sdram_write_phy.sv

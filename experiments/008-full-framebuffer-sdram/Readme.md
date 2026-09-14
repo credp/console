@@ -157,6 +157,19 @@ command, mask, write-data and output-enable registers plus the inverted
 forwarded SDRAM clock. Quartus 17 packed those registers into the SDRAM I/O
 cells in the first hardware build.
 
+`raster_720p` is the locally copied timing generator from experiment 003. It
+provides the 1280x720 active-video X/Y/DE contract needed by the framebuffer
+consumer.
+
+Important clocking discrepancy: although the raster source comment describes
+the standard 74.25 MHz 720p60 timings, experiment 003 actually clocked this
+raster at 20 MHz. Its 1650 x 750 total therefore produced a roughly 16.16 Hz
+custom mode, not 720p60. That direct-video path was observed working on the
+target display, so it is the deliberate low-risk framebuffer bring-up path.
+A future 74.25 MHz scanout clock must be added and verified separately before
+calling this output 720p60; it will also need an explicit clock-domain boundary
+between SDRAM reading and scanout.
+
 `Template.sv` connects this producer-only path to the physical SDRAM at the
 142.857 MHz command-clock point characterized in experiment 006.a. The old
 20 MHz test video remains independent; no framebuffer consumer or HDMI
