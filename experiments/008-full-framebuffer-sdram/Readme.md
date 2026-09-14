@@ -74,8 +74,16 @@ better than clever code in this experiment.
 The first implemented blocks are:
 
 - `framebuffer_pattern_pixel`, a tiny combinational pixel function;
+- `framebuffer_machine_line_source`, the explicit owner of machine-visible
+  framebuffer counters: pixel X, line Y, frame index, and generated pixel data;
 - `framebuffer_producer_lines`, a two-line producer-side ownership prototype
-  with no SDRAM backend yet.
+  with no SDRAM backend yet;
+- `framebuffer_line_write_sequencer`, a producer-side line drain that emits
+  fixed-size write chunks. `WRITE_CHUNK_WORDS` is a synthesis-time parameter so
+  the first hardware build can use whole-line writes or smaller chunks without
+  changing the ownership logic. This block converts framebuffer coordinates
+  into linear byte addresses; SDRAM chip/bank/row/column mapping belongs below
+  the request interface.
 
 Run its simulation with:
 

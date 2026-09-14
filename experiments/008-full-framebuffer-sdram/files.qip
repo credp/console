@@ -1,5 +1,7 @@
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_pattern_pixel.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_machine_line_source.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_producer_lines.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/framebuffer_line_write_sequencer.sv
 set_global_assignment -name VERILOG_FILE rtl/lfsr.v
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/cos.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/mycore.v

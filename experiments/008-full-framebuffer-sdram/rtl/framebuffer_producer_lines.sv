@@ -39,29 +39,35 @@ module framebuffer_producer_lines #(
 
     logic working_buffer;
     logic [1:0] buffer_owned_by_writer;
-    logic [15:0] generated_pixel;
-    logic fill_last_pixel_of_line;
-    logic fill_last_line_of_frame;
+    logic [15:0] machine_pixel;
+    logic machine_produce_pixel;
+    logic machine_last_pixel_of_line;
+    logic machine_last_line_of_frame;
     logic next_working_buffer_free;
+    logic [9:0] completed_line_y;
 
-    framebuffer_pattern_pixel #(
+    framebuffer_machine_line_source #(
         .FRAMEBUFFER_WIDTH(FRAMEBUFFER_WIDTH),
         .FRAMEBUFFER_HEIGHT(FRAMEBUFFER_HEIGHT)
-    ) pattern (
-        .x(producer_x),
-        .y(producer_y),
+    ) machine_source (
+        .clk(clk),
+        .reset(reset),
+        .produce_pixel(machine_produce_pixel),
+        .pixel_x(producer_x),
+        .line_y(producer_y),
         .frame_index(frame_index),
-        .pixel(generated_pixel)
+        .pixel(machine_pixel),
+        .last_pixel_of_line(machine_last_pixel_of_line),
+        .last_line_of_frame(machine_last_line_of_frame)
     );
 
-    assign fill_last_pixel_of_line = (producer_x == 11'(FRAMEBUFFER_WIDTH - 1));
-    assign fill_last_line_of_frame = (producer_y == 10'(FRAMEBUFFER_HEIGHT - 1));
     assign next_working_buffer_free = !buffer_owned_by_writer[!working_buffer];
     assign stalled_waiting_for_free_line = (state == PRODUCER_WAIT_FOR_FREE_LINE);
+    assign machine_produce_pixel = (state == PRODUCER_FILL_LINE);
 
     assign line_ready_valid = (state == PRODUCER_HAND_OFF_LINE);
     assign line_ready_buffer = working_buffer;
-    assign line_ready_y = producer_y;
+    assign line_ready_y = completed_line_y;
 
     always_ff @(posedge clk) begin
         if (reset) begin
@@ -78,9 +84,7 @@ module framebuffer_producer_lines #(
             state <= PRODUCER_RESET;
             working_buffer <= 1'b0;
             buffer_owned_by_writer <= 2'b00;
-            producer_x <= '0;
-            producer_y <= '0;
-            frame_index <= '0;
+            completed_line_y <= '0;
         end else begin
             if (line_release_valid) begin
                 buffer_owned_by_writer[line_release_buffer] <= 1'b0;
@@ -93,29 +97,20 @@ module framebuffer_producer_lines #(
 
                 PRODUCER_FILL_LINE: begin
                     if (working_buffer) begin
-                        line1_pixels[producer_x] <= generated_pixel;
+                        line1_pixels[producer_x] <= machine_pixel;
                     end else begin
-                        line0_pixels[producer_x] <= generated_pixel;
+                        line0_pixels[producer_x] <= machine_pixel;
                     end
 
-                    if (fill_last_pixel_of_line) begin
+                    if (machine_last_pixel_of_line) begin
+                        completed_line_y <= producer_y;
                         state <= PRODUCER_HAND_OFF_LINE;
-                    end else begin
-                        producer_x <= producer_x + 1'b1;
                     end
                 end
 
                 PRODUCER_HAND_OFF_LINE: begin
                     if (line_ready_valid && line_ready_accept) begin
                         buffer_owned_by_writer[working_buffer] <= 1'b1;
-                        producer_x <= '0;
-
-                        if (fill_last_line_of_frame) begin
-                            producer_y <= '0;
-                            frame_index <= frame_index + 1'b1;
-                        end else begin
-                            producer_y <= producer_y + 1'b1;
-                        end
 
                         if (next_working_buffer_free) begin
                             working_buffer <= !working_buffer;
