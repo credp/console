@@ -94,7 +94,10 @@ The first implemented blocks are:
   instead of overwriting an output line that has not advanced;
 - `framebuffer_line_read_sequencer`, a consumer-side line fill sequencer that
   emits fixed-size read chunks and turns returned read data into the fill
-  stream. It still talks to a fake read source in simulation.
+  stream. Its synthesis-time default is 256 words: five requests fill a
+  1280-pixel line, and every request remains within one 1024-word page of the
+  MIT agg23 continuous-burst reader. It still talks to a fake read source in
+  simulation.
 - `framebuffer_consumer_read_path`, the matching thin composition of the read
   sequencer, line scheduler, and consumer line buffers. Its only timing input
   is the physical scanout line-boundary event;

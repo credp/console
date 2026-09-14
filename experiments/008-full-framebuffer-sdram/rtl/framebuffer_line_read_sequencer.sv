@@ -2,7 +2,8 @@
 
 module framebuffer_line_read_sequencer #(
     parameter integer FRAMEBUFFER_WIDTH = 1280,
-    parameter integer READ_CHUNK_WORDS = 1280
+    // Keep the default page-contained for the agg23 continuous-burst reader.
+    parameter integer READ_CHUNK_WORDS = 256
 ) (
     input  logic        clk,
     input  logic        reset,

@@ -6,7 +6,9 @@ module framebuffer_consumer_read_path #(
     parameter integer FRAMEBUFFER_WIDTH = 1280,
     parameter integer FRAMEBUFFER_HEIGHT = 720,
     parameter integer LINE_ADDR_WIDTH = 11,
-    parameter integer READ_CHUNK_WORDS = 1280
+    // 256 divides both a 1280-pixel line and the agg23 controller's
+    // 1024-word SDRAM page, so no request crosses a native page boundary.
+    parameter integer READ_CHUNK_WORDS = 256
 ) (
     input  logic                         clk,
     input  logic                         reset,
