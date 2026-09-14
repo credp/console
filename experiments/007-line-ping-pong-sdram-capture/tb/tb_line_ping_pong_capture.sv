@@ -1,5 +1,9 @@
 `timescale 1ns/1ps
 module tb_line_ping_pong_capture;
+initial begin
+    $dumpfile("line007.vcd");
+    $dumpvars(0, tb_line_ping_pong_capture);
+end
 `ifdef SDRAM_BACKEND_AGG23_WORD
     localparam bit EXPECT_NO_REUSE_ERROR = 1'b0;
 `elsif SDRAM_BACKEND_AGG23_BURST

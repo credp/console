@@ -192,12 +192,23 @@ wire reuse_before_drain_error;
 wire [15:0] worst_line_drain_cycles;
 wire [15:0] current_line_drain_cycles;
 
+reg [1:0] sdram_init_done_sys;
+
+always @(posedge clk_sys) begin
+    if (reset_core)
+        sdram_init_done_sys <= 2'b00;
+    else
+        sdram_init_done_sys <= {sdram_init_done_sys[0], sdram_init_done};
+end
+
+wire line_source_reset_video = reset_core | ~sdram_init_done_sys[1];
+
 line_ping_pong_capture line_source
 (
 	.clk_source(clk_sdram),
 	.reset_source(reset | ~sdram_init_done),
 	.clk_video(clk_sys),
-	.reset_video(reset_core),
+	.reset_video(line_source_reset_video),
 	.video_x(x),
 	.video_y(y),
 	.video_de(de_raw),
@@ -246,12 +257,76 @@ line_capture_sdram_backend #(.SDRAM_FREQ_HZ(100_000_000), .SDRAM_FREQ_MHZ(100), 
 	.SDRAM_DQ(SDRAM_DQ), .SDRAM_CLK(SDRAM_CLK)
 );
 
-assign VGA_DE = de_raw;
-assign VGA_HS = hsync_raw;
-assign VGA_VS = vsync_raw;
-assign VGA_R  = (col==0 || col == 1) ? {line_pixel[15:11], line_pixel[15:13]} : 8'd0;
-assign VGA_G  = (col==0 || col == 2) ? {line_pixel[10:5],  line_pixel[10:9]} : 8'd0;
-assign VGA_B  = (col==0 || col == 3) ? {line_pixel[4:0],   line_pixel[4:2]} : 8'd0;
+// original:
+//assign VGA_DE = de_raw;
+//assign VGA_HS = hsync_raw;
+//assign VGA_VS = vsync_raw;
+//assign VGA_R  = (col==0 || col == 1) ? {line_pixel[15:11], line_pixel[15:13]} : 8'd0;
+//assign VGA_G  = (col==0 || col == 2) ? {line_pixel[10:5],  line_pixel[10:9]} : 8'd0;
+//assign VGA_B  = (col==0 || col == 3) ? {line_pixel[4:0],   line_pixel[4:2]} : 8'd0;
+
+// vga control signals buffered
+//assign VGA_DE = de;
+//assign VGA_HS = hsync;
+//assign VGA_VS = vsync;
+
+// one more clock delay
+reg de_d;
+reg hsync_d;
+reg vsync_d;
+
+always @(posedge clk_sys) begin
+    de_d <= de;
+    hsync_d <= hsync;
+    vsync_d <= vsync;
+end
+
+assign VGA_DE = de_d;
+assign VGA_HS = hsync_d;
+assign VGA_VS = vsync_d;
+
+/* two clocks delay for VGA control signals */
+/*
+reg [1:0] de_d;
+reg [1:0] hsync_d;
+reg [1:0] vsync_d;
+
+always @(posedge clk_sys) begin
+    de_d <= {de_d[0], de};
+    hsync_d <= {hsync_d[0], hsync};
+    vsync_d <= {vsync_d[0], vsync};
+end
+
+assign VGA_DE = de_d[1];
+assign VGA_HS = hsync_d[1];
+assign VGA_VS = vsync_d[1];
+*/
+
+// pixel data from coords in logic
+//assign VGA_R = x[7:0];
+//assign VGA_G = y[7:0];
+//assign VGA_B = x[7:0]^y[7:0];
+
+// direct pixel register from coordinates
+//wire [15:0] direct_pixel = {
+//	x[10:6],
+//	y[8:3],
+//	x[5:1] ^ y[7:3]
+//};
+//assign VGA_R  = (col==0 || col == 1) ? {direct_pixel[15:11], direct_pixel[15:13]} : 8'd0;
+//assign VGA_G  = (col==0 || col == 2) ? {direct_pixel[10:5],  direct_pixel[10:9]} : 8'd0;
+//assign VGA_B  = (col==0 || col == 3) ? {direct_pixel[4:0],   direct_pixel[4:2]} : 8'd0;
+
+logic generated_lines_ready;
+always @(posedge clk_sys) begin
+    generated_lines_ready <= (source_lines_generated[31:0] > 2)? 1'b1 : 1'b0;
+end
+
+// Expose line_pixel values directly
+assign VGA_R  = generated_lines_ready ? ((col==0 || col == 1) ? {8{line_pixel[15]}} : 8'd0) : 8'd0;
+assign VGA_G  = generated_lines_ready ? ((col==0 || col == 2) ? {8{line_pixel[10]}} : 8'd0) : 8'd0;
+assign VGA_B  = generated_lines_ready ? ((col==0 || col == 3) ? {8{line_pixel[4]}} : 8'd0) : 8'd0;
+
 
 assign VIDEO_ARX = 13'd16;
 assign VIDEO_ARY = 13'd9;
@@ -259,5 +334,7 @@ assign VIDEO_ARY = 13'd9;
 reg  [26:0] act_cnt;
 always @(posedge clk_sys) act_cnt <= act_cnt + 1'd1; 
 assign LED_USER = (reuse_before_drain_error || sdram_backend_error) ? act_cnt[22] : sdram_init_done;
+//assign LED_USER = (sdram_backend_error) ? act_cnt[22] : sdram_init_done;
+//assign LED_USER = (reuse_before_drain_error) ? act_cnt[22] : sdram_init_done;
 
 endmodule

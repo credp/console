@@ -53,10 +53,6 @@ module line_ping_pong_capture #(
 
     logic fill_sel;
     logic line_valid_video;
-    logic [ADDR_WIDTH-1:0] fill_x;
-    logic [11:0] source_h;
-    logic [9:0] source_y;
-    logic [15:0] frame_number;
     logic [1:0] pending_drain_video;
     logic [1:0] pending_drain;
     logic [15:0] drain_cycles [0:1];
@@ -79,6 +75,8 @@ module line_ping_pong_capture #(
     logic cap_error_toggle_meta;
     logic cap_error_toggle_video;
     logic cap_error_toggle_video_prev;
+    logic display_sel_q;
+    logic newest_display_buffer;
 
     typedef enum logic [1:0] {CAP_IDLE, CAP_REQ, CAP_WRITE, CAP_WAIT_COMPLETE} cap_state_t;
     cap_state_t cap_state;
@@ -89,14 +87,28 @@ module line_ping_pong_capture #(
     logic [ADDR_WIDTH-1:0] cap_word;
     logic [15:0] cap_read_data;
     logic [15:0] cap_drain_cycles;
+    logic source_line_accepted;
+    wire source_active;
+    wire fill_last;
+    wire [ADDR_WIDTH-1:0] source_x;
+    wire [9:0] source_y;
+    wire [15:0] source_pixel;
 
-    wire source_active = (source_h < 12'(LINE_WORDS));
-    wire fill_last = (source_h == 12'(SOURCE_LINE_CYCLES - 1));
-    wire [15:0] generated_pixel = {
-        fill_x[10:6] + frame_number[4:0],
-        source_y[8:3] ^ frame_number[5:0],
-        fill_x[5:1] ^ source_y[7:3]
-    };
+    line_ping_pong_generated_source #(
+        .LINE_WORDS(LINE_WORDS),
+        .ADDR_WIDTH(ADDR_WIDTH)
+    ) source (
+        .clk(clk_video),
+        .reset(reset_video),
+        .video_x(video_x),
+        .video_y(video_y),
+        .accept_line(source_line_accepted),
+        .source_active(source_active),
+        .source_line_done(fill_last),
+        .source_x(source_x),
+        .source_y(source_y),
+        .source_pixel(source_pixel)
+    );
 
     wire [ADDR_WIDTH-1:0] video_addr = video_x[ADDR_WIDTH-1:0];
     logic [ADDR_WIDTH-1:0] cap_read_addr;
@@ -104,18 +116,19 @@ module line_ping_pong_capture #(
     wire [15:0] line1_cap_data;
     wire [15:0] line0_video_data;
     wire [15:0] line1_video_data;
-    wire display_sel = !fill_sel;
+    //wire display_sel = !fill_sel;
+    logic display_sel;
     wire line0_video_we = source_active && fill_sel == 1'b0;
     wire line1_video_we = source_active && fill_sel == 1'b1;
     wire line0_video_read = display_sel == 1'b0;
-    wire [ADDR_WIDTH-1:0] line0_video_addr = line0_video_we ? fill_x : video_addr;
-    wire [ADDR_WIDTH-1:0] line1_video_addr = line1_video_we ? fill_x : video_addr;
+    wire [ADDR_WIDTH-1:0] line0_video_addr = video_addr;
+    wire [ADDR_WIDTH-1:0] line1_video_addr = video_addr;
 
     line_ping_pong_line_buffer #(.LINE_WORDS(LINE_WORDS), .ADDR_WIDTH(ADDR_WIDTH)) line0_buffer (
         .clk_video(clk_video),
         .video_we(line0_video_we),
         .video_addr(line0_video_addr),
-        .video_wdata(generated_pixel),
+        .video_wdata(source_pixel),
         .video_rdata(line0_video_data),
         .clk_capture(clk_source),
         .capture_addr(cap_read_addr),
@@ -126,7 +139,7 @@ module line_ping_pong_capture #(
         .clk_video(clk_video),
         .video_we(line1_video_we),
         .video_addr(line1_video_addr),
-        .video_wdata(generated_pixel),
+        .video_wdata(source_pixel),
         .video_rdata(line1_video_data),
         .clk_capture(clk_source),
         .capture_addr(cap_read_addr),
@@ -137,10 +150,6 @@ module line_ping_pong_capture #(
         if (reset_video) begin
             fill_sel <= 1'b0;
             line_valid_video <= 1'b0;
-            fill_x <= '0;
-            source_h <= '0;
-            source_y <= '0;
-            frame_number <= '0;
             pending_drain_video <= '0;
             drain_done_toggle_meta <= '0;
             drain_done_toggle_video <= '0;
@@ -155,7 +164,11 @@ module line_ping_pong_capture #(
             reuse_before_drain_error <= 1'b0;
             video_pixel <= 16'h0000;
             video_buffer <= 1'b0;
+            display_sel_q <= 1'b0;
+            newest_display_buffer <= 1'b0;
+            source_line_accepted <= 1'b0;
         end else begin
+            source_line_accepted <= 1'b0;
             drain_done_toggle_meta <= drain_done_toggle_source;
             drain_done_toggle_video <= drain_done_toggle_meta;
             cap_error_toggle_meta <= cap_error_toggle_source;
@@ -174,26 +187,24 @@ module line_ping_pong_capture #(
             if (source_active && pending_drain_video[fill_sel])
                 reuse_before_drain_error <= 1'b1;
 
+            display_sel <= display_sel_q;
+
             if (fill_last) begin
-                source_lines_generated <= source_lines_generated + 1'b1;
-                line_valid_video <= 1'b1;
-                pending_drain_video[fill_sel] <= 1'b1;
-                completed_buffer_video <= fill_sel;
-                completed_y_video <= source_y;
-                completed_toggle_video <= !completed_toggle_video;
-                if (pending_drain_video[!fill_sel]) reuse_before_drain_error <= 1'b1;
-                fill_sel <= !fill_sel;
-                fill_x <= '0;
-                source_h <= '0;
-                if (source_y == 10'd719) begin
-                    source_y <= '0;
-                    frame_number <= frame_number + 1'b1;
-                end else begin
-                    source_y <= source_y + 1'b1;
+                if (!pending_drain_video[!fill_sel]) begin
+                    source_line_accepted <= 1'b1;
+                    source_lines_generated <= source_lines_generated + 1'b1;
+                    line_valid_video <= 1'b1;
+                    pending_drain_video[fill_sel] <= 1'b1;
+                    completed_buffer_video <= fill_sel;
+                    completed_y_video <= source_y;
+                    completed_toggle_video <= !completed_toggle_video;
+                    newest_display_buffer <= fill_sel;
+                    fill_sel <= !fill_sel;
                 end
-            end else begin
-                source_h <= source_h + 1'b1;
-                if (source_active) fill_x <= fill_x + 1'b1;
+            end
+
+            if (video_x == 0) begin
+                display_sel_q <= newest_display_buffer;
             end
 
             if (video_de && video_x < 11'd1280 && video_y < 10'd720 && line_valid_video) begin
@@ -331,6 +342,52 @@ module line_ping_pong_capture #(
             if (cap_drain_cycles > 16'(DRAIN_WARN_CYCLES))
                 cap_error_toggle_source <= !cap_error_toggle_source;
         end
+    end
+endmodule
+
+module line_ping_pong_generated_source #(
+    parameter integer LINE_WORDS = 1280,
+    parameter integer ADDR_WIDTH = 11
+) (
+    input  logic                  clk,
+    input  logic                  reset,
+    input  logic [10:0]           video_x,
+    input  logic [9:0]            video_y,
+    input  logic                  accept_line,
+    output logic                  source_active,
+    output logic                  source_line_done,
+    output logic [ADDR_WIDTH-1:0] source_x,
+    output logic [9:0]            source_y,
+    output logic [15:0]           source_pixel
+);
+    logic [15:0] frame_number;
+
+    always_ff @(posedge clk) begin
+        if (reset) begin
+            source_y <= '0;
+            frame_number <= '0;
+        end else if (accept_line) begin
+            if (source_y == 10'd719) begin
+                source_y <= '0;
+                frame_number <= frame_number + 1'b1;
+            end else begin
+                source_y <= source_y + 1'b1;
+            end
+        end
+    end
+
+    always_comb begin
+        source_active = (video_x < 11'(LINE_WORDS)) && (video_y < 10'd720);
+        source_line_done = (video_x == 11'(LINE_WORDS - 1)) && (video_y < 10'd720);
+        source_x = video_x[ADDR_WIDTH-1:0];
+        source_pixel = {
+//            video_x[10:6] + frame_number[4:0],
+//            video_y[8:3] ^ frame_number[5:0],
+//            video_x[5:1] ^ video_y[7:3]
+            source_x[7:0],
+            source_y[7:0],
+            frame_number[7:0]
+        };
     end
 endmodule
 
