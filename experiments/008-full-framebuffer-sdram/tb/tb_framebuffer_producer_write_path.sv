@@ -35,8 +35,11 @@ module tb_framebuffer_producer_write_path;
     integer chunk_index;
     integer word_index;
     integer stall_once;
+    integer memory_index;
+    integer current_write_word_address;
     logic expected_buffer;
     logic [15:0] expected;
+    logic [15:0] framebuffer_memory [0:TEST_WIDTH*TEST_HEIGHT-1];
 
     always #5 clk = !clk;
 
@@ -113,6 +116,7 @@ module tb_framebuffer_producer_write_path;
                        expected_line, expected_chunk, req_write, req_byte_address,
                        req_words, req_tag, expected_address, expected_tag);
             end
+            current_write_word_address = req_byte_address[26:1];
             @(negedge clk);
             req_ready = 1'b1;
             @(posedge clk);
@@ -150,6 +154,7 @@ module tb_framebuffer_producer_write_path;
                                expected_line, expected_chunk, word_index,
                                write_data, expected, write_byte_enable);
                     end
+                    framebuffer_memory[current_write_word_address + word_index] = write_data;
                     word_index = word_index + 1;
                 end
                 @(posedge clk);
@@ -181,6 +186,11 @@ module tb_framebuffer_producer_write_path;
         completion_tag = '0;
         completion_words = '0;
         completion_error = 1'b0;
+        current_write_word_address = 0;
+
+        for (memory_index = 0; memory_index < TEST_WIDTH * TEST_HEIGHT; memory_index = memory_index + 1) begin
+            framebuffer_memory[memory_index] = 16'hxxxx;
+        end
 
         repeat (3) @(posedge clk);
         reset = 1'b0;
@@ -201,7 +211,20 @@ module tb_framebuffer_producer_write_path;
                    writer_error, producer_stalled_waiting_for_free_line);
         end
 
-        $display("PASS framebuffer_producer_write_path: producer lines drain to chunked write stream");
+        for (line_index = 0; line_index < TEST_HEIGHT; line_index = line_index + 1) begin
+            for (word_index = 0; word_index < TEST_WIDTH; word_index = word_index + 1) begin
+                expected = expected_pixel(11'(word_index), 10'(line_index),
+                                          (line_index == 0) ? 8'd1 : 8'd0);
+                if (framebuffer_memory[line_index * TEST_WIDTH + word_index] !== expected) begin
+                    $fatal(1, "stored framebuffer mismatch x=%0d y=%0d got=%h expected=%h",
+                           word_index, line_index,
+                           framebuffer_memory[line_index * TEST_WIDTH + word_index],
+                           expected);
+                end
+            end
+        end
+
+        $display("PASS framebuffer_producer_write_path: producer writes a linear framebuffer image");
         $finish;
     end
 

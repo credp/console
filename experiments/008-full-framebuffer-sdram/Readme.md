@@ -76,6 +76,8 @@ The first implemented blocks are:
 - `framebuffer_pattern_pixel`, a tiny combinational pixel function;
 - `framebuffer_machine_line_source`, the explicit owner of machine-visible
   framebuffer counters: pixel X, line Y, frame index, and generated pixel data;
+- `framebuffer_line_chunk_address`, the explicit framebuffer-address block that
+  converts a line/chunk coordinate into a linear byte address;
 - `framebuffer_producer_lines`, a two-line producer-side ownership prototype
   with no SDRAM backend yet;
 - `framebuffer_line_write_sequencer`, a producer-side line drain that emits

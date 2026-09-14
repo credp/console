@@ -62,6 +62,7 @@ module framebuffer_line_write_sequencer #(
     logic [CHUNK_INDEX_WIDTH-1:0] chunk_index;
     logic [15:0] word_index_in_chunk;
     logic [15:0] write_data_q;
+    logic [6:0] chunk_index_for_address;
     logic [LINE_ADDR_WIDTH-1:0] chunk_start_x;
     logic [7:0] expected_completion_tag;
     logic last_word_in_chunk;
@@ -72,11 +73,7 @@ module framebuffer_line_write_sequencer #(
 
     assign req_valid = (state == WRITER_REQUEST_CHUNK);
     assign req_write = 1'b1;
-    // This is the framebuffer-to-linear-address boundary.  The producer knows
-    // the framebuffer line and chunk.  SDRAM chip/bank/row/column mapping stays
-    // below this request interface.
-    assign req_byte_address = ((27'(framebuffer_line_y) * 27'(FRAMEBUFFER_WIDTH)) +
-                               (27'(chunk_index) * 27'(WRITE_CHUNK_WORDS))) << 1;
+    assign chunk_index_for_address = 7'(chunk_index);
     assign req_words = 16'(WRITE_CHUNK_WORDS);
     assign req_tag = expected_completion_tag;
 
@@ -93,6 +90,15 @@ module framebuffer_line_write_sequencer #(
     assign expected_completion_tag = {active_buffer, 7'(chunk_index)};
     assign last_word_in_chunk = (word_index_in_chunk == 16'(WRITE_CHUNK_WORDS - 1));
     assign last_chunk_in_line = (chunk_index == CHUNK_INDEX_WIDTH'(CHUNKS_PER_LINE - 1));
+
+    framebuffer_line_chunk_address #(
+        .FRAMEBUFFER_WIDTH(FRAMEBUFFER_WIDTH),
+        .WRITE_CHUNK_WORDS(WRITE_CHUNK_WORDS)
+    ) address (
+        .framebuffer_line_y(framebuffer_line_y),
+        .chunk_index(chunk_index_for_address),
+        .byte_address(req_byte_address)
+    );
 
     always_ff @(posedge clk) begin
         if (reset) begin
