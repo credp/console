@@ -2,7 +2,7 @@ IVERILOG ?= iverilog
 VVP ?= vvp
 VERILATOR ?= verilator
 
-.PHONY: test test-agg23-burst-cache test-agg23-read-backend test-producer-bl8 test-producer-bl8-refresh test-producer-bl8-capacity test-producer-bl8-chunks waveform clean
+.PHONY: test test-one-shot-handoff test-agg23-burst-cache test-agg23-read-backend test-producer-bl8 test-producer-bl8-refresh test-producer-bl8-capacity test-producer-bl8-chunks waveform clean
 
 test: build/tb_framebuffer_pattern_pixel.vvp build/tb_framebuffer_machine_line_source.vvp build/tb_framebuffer_line_chunk_address.vvp build/tb_framebuffer_producer_lines.vvp build/tb_framebuffer_line_write_sequencer.vvp build/tb_framebuffer_producer_write_path.vvp build/tb_framebuffer_consumer_lines.vvp build/tb_framebuffer_line_read_sequencer.vvp build/tb_framebuffer_consumer_line_scheduler.vvp build/tb_framebuffer_scanout_timing_adapter.vvp build/tb_framebuffer_write_read_path.vvp
 	$(VVP) $<
@@ -34,6 +34,9 @@ test-producer-bl8-chunks: build/tb_framebuffer_producer_bl8_chunks.vvp
 
 test-agg23-burst-cache: build/tb_framebuffer_agg23_burst_cache.vvp
 	$(VVP) build/tb_framebuffer_agg23_burst_cache.vvp
+
+test-one-shot-handoff: build/tb_framebuffer_one_shot_handoff.vvp
+	$(VVP) build/tb_framebuffer_one_shot_handoff.vvp
 
 test-agg23-read-backend:
 	mkdir -p build/obj_agg23_read_backend
@@ -103,6 +106,10 @@ build/tb_framebuffer_producer_bl8_chunks.vvp: rtl/framebuffer_pattern_pixel.sv r
 build/tb_framebuffer_agg23_burst_cache.vvp: rtl/framebuffer_agg23_burst_cache.sv tb/tb_framebuffer_agg23_burst_cache.sv
 	mkdir -p build
 	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_agg23_burst_cache -o $@ $^
+
+build/tb_framebuffer_one_shot_handoff.vvp: rtl/framebuffer_one_shot_handoff.sv tb/tb_framebuffer_one_shot_handoff.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_one_shot_handoff -o $@ $^
 
 clean:
 	rm -rf build
