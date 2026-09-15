@@ -1,0 +1,161 @@
+IVERILOG ?= iverilog
+VVP ?= vvp
+VERILATOR ?= verilator
+
+.PHONY: test test-one-shot-handoff test-one-shot-reader-init test-agg23-burst-cache test-agg23-read-backend test-producer-bl8 test-producer-bl8-refresh test-producer-bl8-capacity test-producer-bl8-chunks test-shared-phy-frame-write test-shared-phy-page-read test-shared-phy-write-read test-readback-probe test-frame-verifier waveform clean
+
+test: build/tb_framebuffer_pattern_pixel.vvp build/tb_framebuffer_machine_line_source.vvp build/tb_framebuffer_line_chunk_address.vvp build/tb_framebuffer_producer_lines.vvp build/tb_framebuffer_line_write_sequencer.vvp build/tb_framebuffer_producer_write_path.vvp build/tb_framebuffer_consumer_lines.vvp build/tb_framebuffer_consumer_lines_dual_clock.vvp build/tb_framebuffer_line_read_sequencer.vvp build/tb_framebuffer_consumer_line_scheduler.vvp build/tb_framebuffer_scanout_timing_adapter.vvp build/tb_framebuffer_write_read_path.vvp
+	$(VVP) $<
+	$(VVP) build/tb_framebuffer_machine_line_source.vvp
+	$(VVP) build/tb_framebuffer_line_chunk_address.vvp
+	$(VVP) build/tb_framebuffer_producer_lines.vvp
+	$(VVP) build/tb_framebuffer_line_write_sequencer.vvp
+	$(VVP) build/tb_framebuffer_producer_write_path.vvp
+	$(VVP) build/tb_framebuffer_consumer_lines.vvp
+	$(VVP) build/tb_framebuffer_consumer_lines_dual_clock.vvp
+	$(VVP) build/tb_framebuffer_line_read_sequencer.vvp
+	$(VVP) build/tb_framebuffer_consumer_line_scheduler.vvp
+	$(VVP) build/tb_framebuffer_scanout_timing_adapter.vvp
+	$(VVP) build/tb_framebuffer_write_read_path.vvp
+
+waveform: build/tb_framebuffer_write_read_path.vvp
+	$(VVP) build/tb_framebuffer_write_read_path.vvp
+
+test-producer-bl8: build/tb_framebuffer_producer_bl8_write_backend.vvp
+	$(VVP) build/tb_framebuffer_producer_bl8_write_backend.vvp
+
+test-producer-bl8-refresh: build/tb_framebuffer_producer_bl8_refresh.vvp
+	$(VVP) build/tb_framebuffer_producer_bl8_refresh.vvp
+
+test-producer-bl8-capacity: build/tb_framebuffer_producer_bl8_capacity.vvp
+	$(VVP) build/tb_framebuffer_producer_bl8_capacity.vvp
+
+test-producer-bl8-one-shot: build/tb_framebuffer_producer_bl8_one_shot.vvp
+	$(VVP) build/tb_framebuffer_producer_bl8_one_shot.vvp
+
+test-producer-bl8-chunks: build/tb_framebuffer_producer_bl8_chunks.vvp
+	$(VVP) build/tb_framebuffer_producer_bl8_chunks.vvp
+
+test-shared-phy-frame-write: build/tb_framebuffer_shared_phy_frame_write.vvp
+	$(VVP) build/tb_framebuffer_shared_phy_frame_write.vvp
+
+test-shared-phy-page-read:
+	$(VERILATOR) --binary --timing -Wall -Wno-fatal --top-module tb_framebuffer_shared_phy_page_read -DSIMULATION -Mdir build/verilator-shared-phy-page-read rtl/framebuffer_agg23_burst_cache.sv rtl/third-party/agg23_sdram_burst.sv rtl/framebuffer_agg23_read_backend.sv rtl/framebuffer_sdram_clock_forward.sv rtl/framebuffer_sdram_phy.sv tb/agg23_sdram_pin_model.sv tb/altddio_in_sim.sv tb/tb_framebuffer_shared_phy_page_read.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv
+	build/verilator-shared-phy-page-read/Vtb_framebuffer_shared_phy_page_read
+
+test-shared-phy-write-read:
+	$(VERILATOR) --binary --timing -Wall -Wno-fatal --top-module tb_framebuffer_shared_phy_write_read -DSIMULATION -Mdir build/verilator-shared-phy-write-read rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines_dual_clock.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path_dual_clock.sv rtl/framebuffer_bl8_write_backend.sv rtl/framebuffer_sdram_write_phy.sv rtl/framebuffer_producer_bl8_sdram_path.sv rtl/framebuffer_one_shot_handoff.sv rtl/framebuffer_agg23_burst_cache.sv rtl/third-party/agg23_sdram_burst.sv rtl/framebuffer_agg23_read_backend.sv rtl/framebuffer_sdram_clock_forward.sv rtl/framebuffer_sdram_phy.sv tb/agg23_sdram_pin_model.sv tb/altddio_in_sim.sv tb/tb_framebuffer_shared_phy_write_read.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv
+	build/verilator-shared-phy-write-read/Vtb_framebuffer_shared_phy_write_read
+
+test-agg23-burst-cache: build/tb_framebuffer_agg23_burst_cache.vvp
+	$(VVP) build/tb_framebuffer_agg23_burst_cache.vvp
+
+test-one-shot-handoff: build/tb_framebuffer_one_shot_handoff.vvp
+	$(VVP) build/tb_framebuffer_one_shot_handoff.vvp
+
+test-one-shot-reader-init:
+	$(VERILATOR) --binary --timing -Wall -Wno-fatal --top-module tb_framebuffer_one_shot_reader_init -DSIMULATION -Mdir build/verilator-one-shot rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines_dual_clock.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path_dual_clock.sv rtl/framebuffer_bl8_write_backend.sv rtl/framebuffer_sdram_write_phy.sv rtl/framebuffer_producer_bl8_sdram_path.sv rtl/framebuffer_one_shot_handoff.sv rtl/framebuffer_sdram_clock_forward.sv rtl/framebuffer_sdram_phy.sv rtl/framebuffer_agg23_burst_cache.sv rtl/framebuffer_agg23_read_backend.sv rtl/third-party/agg23_sdram_burst.sv tb/altddio_in_sim.sv tb/tb_framebuffer_one_shot_reader_init.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv ../../rtl/scanout-sdram-controller/tb/pin-model/sdram_pair_model.sv
+	build/verilator-one-shot/Vtb_framebuffer_one_shot_reader_init
+
+test-readback-probe: build/tb_framebuffer_sdram_readback_probe.vvp
+	$(VVP) build/tb_framebuffer_sdram_readback_probe.vvp
+
+test-frame-verifier: build/tb_framebuffer_sdram_frame_verifier.vvp
+	$(VVP) build/tb_framebuffer_sdram_frame_verifier.vvp
+
+test-agg23-read-backend:
+	mkdir -p build/obj_agg23_read_backend
+	$(VERILATOR) --binary --timing -Wno-fatal --top-module tb_framebuffer_agg23_read_backend --Mdir build/obj_agg23_read_backend -o ../tb_framebuffer_agg23_read_backend rtl/framebuffer_agg23_burst_cache.sv rtl/third-party/agg23_sdram_burst.sv rtl/framebuffer_agg23_read_backend.sv tb/agg23_sdram_pin_model.sv tb/tb_framebuffer_agg23_read_backend.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv
+	build/tb_framebuffer_agg23_read_backend
+
+build/tb_framebuffer_pattern_pixel.vvp: rtl/framebuffer_pattern_pixel.sv tb/tb_framebuffer_pattern_pixel.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_pattern_pixel -o $@ $^
+
+build/tb_framebuffer_machine_line_source.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv tb/tb_framebuffer_machine_line_source.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_machine_line_source -o $@ $^
+
+build/tb_framebuffer_line_chunk_address.vvp: rtl/framebuffer_line_chunk_address.sv tb/tb_framebuffer_line_chunk_address.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_line_chunk_address -o $@ $^
+
+build/tb_framebuffer_producer_lines.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_producer_lines.sv tb/tb_framebuffer_producer_lines.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_producer_lines -o $@ $^
+
+build/tb_framebuffer_line_write_sequencer.vvp: rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_line_write_sequencer.sv tb/tb_framebuffer_line_write_sequencer.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_line_write_sequencer -o $@ $^
+
+build/tb_framebuffer_producer_write_path.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path.sv tb/tb_framebuffer_producer_write_path.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_producer_write_path -o $@ $^
+
+build/tb_framebuffer_consumer_lines.vvp: rtl/framebuffer_consumer_lines.sv tb/tb_framebuffer_consumer_lines.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_consumer_lines -o $@ $^
+
+build/tb_framebuffer_consumer_lines_dual_clock.vvp: rtl/framebuffer_consumer_lines_dual_clock.sv tb/tb_framebuffer_consumer_lines_dual_clock.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_consumer_lines_dual_clock -o $@ $^
+
+build/tb_framebuffer_sdram_readback_probe.vvp: rtl/framebuffer_sdram_readback_probe.sv tb/tb_framebuffer_sdram_readback_probe.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_sdram_readback_probe -o $@ $^
+
+build/tb_framebuffer_sdram_frame_verifier.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_sdram_frame_verifier.sv tb/tb_framebuffer_sdram_frame_verifier.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_sdram_frame_verifier -o $@ $^
+
+build/tb_framebuffer_line_read_sequencer.vvp: rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_line_read_sequencer.sv tb/tb_framebuffer_line_read_sequencer.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_line_read_sequencer -o $@ $^
+
+build/tb_framebuffer_consumer_line_scheduler.vvp: rtl/framebuffer_consumer_line_scheduler.sv tb/tb_framebuffer_consumer_line_scheduler.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_consumer_line_scheduler -o $@ $^
+
+build/tb_framebuffer_scanout_timing_adapter.vvp: rtl/framebuffer_scanout_timing_adapter.sv tb/tb_framebuffer_scanout_timing_adapter.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_scanout_timing_adapter -o $@ $^
+
+build/tb_framebuffer_write_read_path.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path.sv rtl/framebuffer_consumer_lines.sv rtl/framebuffer_line_read_sequencer.sv rtl/framebuffer_consumer_line_scheduler.sv rtl/framebuffer_consumer_read_path.sv rtl/framebuffer_transfer_statistics.sv tb/tb_framebuffer_write_read_path.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_write_read_path -o $@ $^
+
+build/tb_framebuffer_producer_bl8_write_backend.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines_dual_clock.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path_dual_clock.sv rtl/framebuffer_bl8_write_backend.sv rtl/framebuffer_sdram_write_phy.sv rtl/framebuffer_producer_bl8_sdram_path.sv tb/tb_framebuffer_producer_bl8_write_backend.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv ../../rtl/scanout-sdram-controller/tb/pin-model/sdram_pair_model.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -DSIMULATION -s tb_framebuffer_producer_bl8_write_backend -o $@ $^
+
+build/tb_framebuffer_producer_bl8_refresh.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines_dual_clock.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path_dual_clock.sv rtl/framebuffer_bl8_write_backend.sv rtl/framebuffer_sdram_write_phy.sv rtl/framebuffer_producer_bl8_sdram_path.sv tb/tb_framebuffer_producer_bl8_write_backend.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv ../../rtl/scanout-sdram-controller/tb/pin-model/sdram_pair_model.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -DSIMULATION -Ptb_framebuffer_producer_bl8_write_backend.REFRESH_INTERVAL_CYCLES=16 -Ptb_framebuffer_producer_bl8_write_backend.REQUIRE_RUNTIME_REFRESH=1 -s tb_framebuffer_producer_bl8_write_backend -o $@ $^
+
+build/tb_framebuffer_producer_bl8_capacity.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines_dual_clock.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path_dual_clock.sv rtl/framebuffer_bl8_write_backend.sv rtl/framebuffer_sdram_write_phy.sv rtl/framebuffer_producer_bl8_sdram_path.sv tb/tb_framebuffer_producer_bl8_write_backend.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv ../../rtl/scanout-sdram-controller/tb/pin-model/sdram_pair_model.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -DSIMULATION -Ptb_framebuffer_producer_bl8_write_backend.TEST_WIDTH=1280 -Ptb_framebuffer_producer_bl8_write_backend.TEST_HEIGHT=4 -Ptb_framebuffer_producer_bl8_write_backend.TEST_ADDR_WIDTH=11 -Ptb_framebuffer_producer_bl8_write_backend.TEST_CHUNK_WORDS=1280 -Ptb_framebuffer_producer_bl8_write_backend.REQUIRE_PRODUCER_STALL=1 -s tb_framebuffer_producer_bl8_write_backend -o $@ $^
+
+build/tb_framebuffer_producer_bl8_one_shot.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines_dual_clock.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path_dual_clock.sv rtl/framebuffer_bl8_write_backend.sv rtl/framebuffer_sdram_write_phy.sv rtl/framebuffer_producer_bl8_sdram_path.sv tb/tb_framebuffer_producer_bl8_write_backend.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv ../../rtl/scanout-sdram-controller/tb/pin-model/sdram_pair_model.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -DSIMULATION -Ptb_framebuffer_producer_bl8_write_backend.TEST_WIDTH=1280 -Ptb_framebuffer_producer_bl8_write_backend.TEST_HEIGHT=4 -Ptb_framebuffer_producer_bl8_write_backend.TEST_ADDR_WIDTH=11 -Ptb_framebuffer_producer_bl8_write_backend.TEST_CHUNK_WORDS=1280 -Ptb_framebuffer_producer_bl8_write_backend.STOP_AFTER_ONE_FRAME=1 -Ptb_framebuffer_producer_bl8_write_backend.REQUIRE_PRODUCER_STALL=1 -s tb_framebuffer_producer_bl8_write_backend -o $@ $^
+
+build/tb_framebuffer_producer_bl8_chunks.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines_dual_clock.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path_dual_clock.sv rtl/framebuffer_bl8_write_backend.sv rtl/framebuffer_sdram_write_phy.sv rtl/framebuffer_producer_bl8_sdram_path.sv tb/tb_framebuffer_producer_bl8_write_backend.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv ../../rtl/scanout-sdram-controller/tb/pin-model/sdram_pair_model.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -DSIMULATION -Ptb_framebuffer_producer_bl8_write_backend.TEST_WIDTH=1280 -Ptb_framebuffer_producer_bl8_write_backend.TEST_HEIGHT=4 -Ptb_framebuffer_producer_bl8_write_backend.TEST_ADDR_WIDTH=11 -Ptb_framebuffer_producer_bl8_write_backend.TEST_CHUNK_WORDS=128 -Ptb_framebuffer_producer_bl8_write_backend.REQUIRE_PRODUCER_STALL=1 -s tb_framebuffer_producer_bl8_write_backend -o $@ $^
+
+build/tb_framebuffer_shared_phy_frame_write.vvp: rtl/framebuffer_pattern_pixel.sv rtl/framebuffer_machine_line_source.sv rtl/framebuffer_line_chunk_address.sv rtl/framebuffer_producer_lines_dual_clock.sv rtl/framebuffer_line_write_sequencer.sv rtl/framebuffer_producer_write_path_dual_clock.sv rtl/framebuffer_bl8_write_backend.sv rtl/framebuffer_producer_bl8_sdram_path.sv rtl/framebuffer_sdram_clock_forward.sv rtl/framebuffer_sdram_phy.sv tb/altddio_in_sim.sv tb/tb_framebuffer_shared_phy_frame_write.sv ../../rtl/scanout-sdram-controller/tb/backend-bench/altddio_out_sim.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -DSIMULATION -s tb_framebuffer_shared_phy_frame_write -o $@ $^
+
+build/tb_framebuffer_agg23_burst_cache.vvp: rtl/framebuffer_agg23_burst_cache.sv tb/tb_framebuffer_agg23_burst_cache.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_agg23_burst_cache -o $@ $^
+
+build/tb_framebuffer_one_shot_handoff.vvp: rtl/framebuffer_one_shot_handoff.sv tb/tb_framebuffer_one_shot_handoff.sv
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_framebuffer_one_shot_handoff -o $@ $^
+
+
+clean:
+	rm -rf build
