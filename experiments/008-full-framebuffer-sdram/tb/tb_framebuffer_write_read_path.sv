@@ -141,9 +141,9 @@ module tb_framebuffer_write_read_path;
                 (sample_y == 10'd0) || (sample_y == 10'(TEST_HEIGHT - 1))) begin
                 expected_pixel = 16'hffff;
             end else begin
-                red = sample_x[7:3] + sample_frame[4:0];
-                green = sample_y[7:2] + {1'b0, sample_frame[4:0]};
-                blue = (sample_x[6:2] ^ sample_y[6:2]) + sample_frame[4:0];
+                red = {sample_x[10:8], 2'b00} + sample_frame[4:0];
+                green = {sample_y[9:7], 3'b000} + {sample_frame[4:0], 1'b0};
+                blue = {(sample_x[10:8] ^ sample_y[9:7]), 2'b00} + sample_frame[4:0];
                 expected_pixel = {red, green, blue};
             end
         end

@@ -7,12 +7,14 @@ module tb_framebuffer_producer_bl8_write_backend #(
     parameter integer TEST_HEIGHT = 4,
     parameter integer TEST_ADDR_WIDTH = 3,
     parameter integer TEST_CHUNK_WORDS = 8,
+    parameter integer STOP_AFTER_ONE_FRAME = 0,
     parameter integer REQUIRE_PRODUCER_STALL = 0,
     parameter integer REFRESH_INTERVAL_CYCLES = 700,
     parameter integer REQUIRE_RUNTIME_REFRESH = 0
 );
     localparam integer CHUNKS_PER_LINE = TEST_WIDTH / TEST_CHUNK_WORDS;
-    localparam integer COMPLETIONS_TO_CHECK = (TEST_HEIGHT + 1) * CHUNKS_PER_LINE;
+    localparam integer COMPLETIONS_TO_CHECK =
+        (STOP_AFTER_ONE_FRAME ? TEST_HEIGHT : TEST_HEIGHT + 1) * CHUNKS_PER_LINE;
 
     logic clk = 1'b0;
     logic machine_clk = 1'b0;
@@ -20,6 +22,7 @@ module tb_framebuffer_producer_bl8_write_backend #(
     logic init_done;
     logic backend_error;
     logic write_completion;
+    logic frame_write_complete;
     logic [10:0] producer_pixel_x;
     logic [9:0] producer_line_y;
     logic [7:0] producer_frame_index;
@@ -57,6 +60,7 @@ module tb_framebuffer_producer_bl8_write_backend #(
         .SDRAM_FREQ_HZ(100_000_000),
         .SDRAM_POWERUP_US(1),
         .REFRESH_INTERVAL_CYCLES(REFRESH_INTERVAL_CYCLES)
+        ,.STOP_AFTER_ONE_FRAME(STOP_AFTER_ONE_FRAME)
     ) dut (
         .machine_clk(machine_clk),
         .sdram_clk(clk),
@@ -64,6 +68,7 @@ module tb_framebuffer_producer_bl8_write_backend #(
         .sdram_init_done(init_done),
         .sdram_error(backend_error),
         .write_completion(write_completion),
+        .frame_write_complete(frame_write_complete),
         .producer_pixel_x(producer_pixel_x),
         .producer_line_y(producer_line_y),
         .producer_frame_index(producer_frame_index),
@@ -104,9 +109,9 @@ module tb_framebuffer_producer_bl8_write_backend #(
                 (sample_y == 10'd0) || (sample_y == 10'(TEST_HEIGHT - 1))) begin
                 expected_pixel = 16'hffff;
             end else begin
-                red = sample_x[7:3] + sample_frame[4:0];
-                green = sample_y[7:2] + {1'b0, sample_frame[4:0]};
-                blue = (sample_x[6:2] ^ sample_y[6:2]) + sample_frame[4:0];
+                red = {sample_x[10:8], 2'b00} + sample_frame[4:0];
+                green = {sample_y[9:7], 3'b000} + {sample_frame[4:0], 1'b0};
+                blue = {(sample_x[10:8] ^ sample_y[9:7]), 2'b00} + sample_frame[4:0];
                 expected_pixel = {red, green, blue};
             end
         end
@@ -139,9 +144,13 @@ module tb_framebuffer_producer_bl8_write_backend #(
         repeat (2) @(negedge clk);
         reset = 1'b0;
 
-        // Four lines create frame zero; a fifth overwrites line zero in frame one.
+        // In continuous mode an extra line overwrites line zero in frame one.
+        // One-shot mode must instead expose the final-line completion cut.
         wait(completion_count == COMPLETIONS_TO_CHECK);
         repeat (20) @(posedge clk);
+
+        if (STOP_AFTER_ONE_FRAME && !frame_write_complete)
+            $fatal(1, "one-shot producer did not report frame completion");
 
         if (writer_error || backend_error) begin
             $fatal(1, "write error writer=%b backend=%b", writer_error, backend_error);
@@ -150,7 +159,7 @@ module tb_framebuffer_producer_bl8_write_backend #(
         for (line_index = 0; line_index < TEST_HEIGHT; line_index = line_index + 1) begin
             for (word_index = 0; word_index < TEST_WIDTH; word_index = word_index + 1) begin
                 expected = expected_pixel(11'(word_index), 10'(line_index),
-                                          (line_index == 0) ? 8'd1 : 8'd0);
+                                          (!STOP_AFTER_ONE_FRAME && line_index == 0) ? 8'd1 : 8'd0);
                 expected_sdram_word_address = line_index * TEST_WIDTH + word_index;
                 if (memory.mem[0][expected_sdram_word_address[24:23]]
                                [expected_sdram_word_address[22:10]]

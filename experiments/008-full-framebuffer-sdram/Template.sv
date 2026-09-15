@@ -50,8 +50,10 @@ assign BUTTONS = 0;
 
 wire [1:0] ar = status[122:121];
 
-assign VIDEO_ARX = (!ar) ? 12'd4 : (ar - 1'd1);
-assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
+// The experiment's native raster is 1280 by 720. Advertising 4:3 here made
+// the MiSTer video path rescale its pixels into a non-square presentation.
+assign VIDEO_ARX = (!ar) ? 12'd16 : (ar - 1'd1);
+assign VIDEO_ARY = (!ar) ? 12'd9 : 12'd0;
 
 `include "build_id.v" 
 localparam CONF_STR = {
@@ -59,7 +61,7 @@ localparam CONF_STR = {
 	"-;",
 	"O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"O[2],TV Mode,NTSC,PAL;",
-	"O[3],Video source,Framebuffer,Raster test;",
+	"O[4:3],Video source,Framebuffer,Raster test,SDRAM sample,Raw line buffer;",
 	"-;",
 	"P1,Test Page 1;",
 	"P1-;",
@@ -131,7 +133,16 @@ framebuffer_sdram_pll sdram_pll
 	.locked(sdram_pll_locked)
 );
 
-wire reset = RESET | status[0] | buttons[1] | ~sdram_pll_locked;
+// SDRAM retains its contents while the FPGA is reconfigured. Give every new
+// bitstream a short local reset interval so this experiment always writes a
+// fresh diagnostic frame instead of accidentally displaying an older one.
+logic [20:0] startup_reset_counter = '0;
+always_ff @(posedge clk_sys) begin
+	if (!(&startup_reset_counter))
+		startup_reset_counter <= startup_reset_counter + 1'b1;
+end
+wire startup_reset = !(&startup_reset_counter);
+wire reset = RESET | status[0] | buttons[1] | startup_reset | ~sdram_pll_locked;
 
 wire sdram_init_done;
 wire sdram_error;
@@ -143,16 +154,23 @@ wire producer_stalled_waiting_for_free_line;
 wire producer_stalled_waiting_for_writer;
 wire writer_busy;
 wire writer_error;
+wire [2:0] writer_error_reason;
 wire frame_write_complete;
 wire [12:0] producer_sdram_a;
 wire [1:0] producer_sdram_ba;
 wire producer_sdram_cke, producer_sdram_ncs, producer_sdram_nras, producer_sdram_ncas, producer_sdram_nwe;
 wire producer_sdram_dqml, producer_sdram_dqmh, producer_sdram_clk, producer_sdram_dq_oe;
 wire [15:0] producer_sdram_dq, producer_sdram_dq_out;
+wire [12:0] producer_protocol_a;
+wire [1:0] producer_protocol_ba;
+wire producer_protocol_cke, producer_protocol_ncs, producer_protocol_nras, producer_protocol_ncas, producer_protocol_nwe;
+wire producer_protocol_dqml, producer_protocol_dqmh, producer_protocol_dq_oe;
+wire [15:0] producer_protocol_dq_out;
 
 framebuffer_producer_bl8_sdram_path #(
 	.SDRAM_FREQ_HZ(142_857_000),
-	.STOP_AFTER_ONE_FRAME(1)
+	.STOP_AFTER_ONE_FRAME(1),
+	.USE_INTERNAL_PHY(0)
 ) framebuffer_producer (
 	.machine_clk(clk_sys),
 	.sdram_clk(clk_sdram),
@@ -168,6 +186,13 @@ framebuffer_producer_bl8_sdram_path #(
 	.producer_stalled_waiting_for_writer(producer_stalled_waiting_for_writer),
 	.writer_busy(writer_busy),
 	.writer_error(writer_error),
+	.writer_error_reason(writer_error_reason),
+	.protocol_a(producer_protocol_a), .protocol_ba(producer_protocol_ba),
+	.protocol_cke(producer_protocol_cke), .protocol_ncs(producer_protocol_ncs),
+	.protocol_nras(producer_protocol_nras), .protocol_ncas(producer_protocol_ncas),
+	.protocol_nwe(producer_protocol_nwe), .protocol_dqml(producer_protocol_dqml),
+	.protocol_dqmh(producer_protocol_dqmh), .protocol_dq_out(producer_protocol_dq_out),
+	.protocol_dq_oe(producer_protocol_dq_oe),
 	.SDRAM_A(producer_sdram_a), .SDRAM_BA(producer_sdram_ba),
 	.SDRAM_CKE(producer_sdram_cke), .SDRAM_nCS(producer_sdram_ncs),
 	.SDRAM_nRAS(producer_sdram_nras), .SDRAM_nCAS(producer_sdram_ncas),
@@ -214,6 +239,20 @@ wire [26:0] reader_req_byte_address;
 wire [15:0] reader_req_words, reader_read_data, reader_completion_words;
 wire [7:0] reader_req_tag, reader_completion_tag;
 wire reader_completion_valid, reader_completion_ready, reader_completion_error;
+wire consumer_req_valid, consumer_req_ready, consumer_req_write, consumer_read_ready;
+wire [26:0] consumer_req_byte_address;
+wire [15:0] consumer_req_words;
+wire [7:0] consumer_req_tag;
+wire consumer_completion_ready;
+wire probe_req_valid, probe_req_ready, probe_req_write, probe_read_ready;
+wire [26:0] probe_req_byte_address;
+wire [15:0] probe_req_words;
+wire [7:0] probe_req_tag;
+wire probe_completion_ready, probe_done, probe_passed, probe_failed;
+wire [7:0] probe_status;
+wire [15:0] probe_sample_word;
+wire [31:0] verify_mismatch_count;
+wire probe_active = !probe_done;
 reg [15:0] debug_writer_count, debug_reader_count, debug_error_count;
 always @(posedge clk_sdram) begin
 	if (sdram_reset_sync) begin debug_writer_count<=0; debug_reader_count<=0; debug_error_count<=0; end
@@ -226,13 +265,14 @@ end
 
 // Scanout and the user LED are the only consumers outside clk_sdram of the
 // one-shot completion flag. Keep that crossing away from SDRAM pin control.
+wire framebuffer_ready_checked_sdram = framebuffer_ready_sdram && probe_passed;
 reg framebuffer_ready_sync_meta, framebuffer_ready;
 always @(posedge clk_video) begin
 	if (reset) begin
 		framebuffer_ready_sync_meta <= 1'b0;
 		framebuffer_ready <= 1'b0;
 	end else begin
-		framebuffer_ready_sync_meta <= framebuffer_ready_sdram;
+		framebuffer_ready_sync_meta <= framebuffer_ready_checked_sdram;
 		framebuffer_ready <= framebuffer_ready_sync_meta;
 	end
 end
@@ -251,6 +291,35 @@ framebuffer_agg23_read_backend #(.SDRAM_FREQ_MHZ(143), .PHY_DQ_CAPTURE_STAGES(1)
 	.sdram_dq_in(sdram_dq_capture), .sdram_dq_out(reader_sdram_dq_out), .sdram_dq_oe(reader_sdram_dq_oe),
 	.SDRAM_CLK(reader_sdram_clk)
 );
+
+// Before scanout starts, read the complete one-shot frame through the same
+// reader used for scanout and compare it with the producer's frame-zero
+// pattern. This is intentionally headless: a passing image is evidence only
+// after every SDRAM word has matched, rather than a visual inference.
+framebuffer_sdram_frame_verifier readback_probe (
+	.clk(clk_sdram), .reset(reader_reset_sdram | !reader_init_done),
+	.req_valid(probe_req_valid), .req_ready(probe_req_ready), .req_write(probe_req_write),
+	.req_byte_address(probe_req_byte_address), .req_words(probe_req_words), .req_tag(probe_req_tag),
+	.read_valid(reader_read_valid), .read_ready(probe_read_ready), .read_data(reader_read_data),
+	.completion_valid(reader_completion_valid), .completion_ready(probe_completion_ready),
+	.completion_tag(reader_completion_tag), .completion_words(reader_completion_words),
+	.completion_error(reader_completion_error), .done(probe_done), .passed(probe_passed),
+	.failed(probe_failed), .mismatch_count(verify_mismatch_count)
+);
+
+// Retain the existing diagnostic source without making it part of the proof.
+assign probe_status = probe_passed ? 8'h01 : probe_failed ? 8'hee : 8'h00;
+assign probe_sample_word = 16'h0000;
+
+assign reader_req_valid = probe_active ? probe_req_valid : consumer_req_valid;
+assign reader_req_write = probe_active ? probe_req_write : consumer_req_write;
+assign reader_req_byte_address = probe_active ? probe_req_byte_address : consumer_req_byte_address;
+assign reader_req_words = probe_active ? probe_req_words : consumer_req_words;
+assign reader_req_tag = probe_active ? probe_req_tag : consumer_req_tag;
+assign probe_req_ready = reader_req_ready && probe_active;
+assign consumer_req_ready = reader_req_ready && !probe_active;
+assign reader_read_ready = probe_active ? probe_read_ready : consumer_read_ready;
+assign reader_completion_ready = probe_active ? probe_completion_ready : consumer_completion_ready;
 
 wire [10:0] raster_x;
 wire [9:0] raster_y;
@@ -280,12 +349,34 @@ reg [15:0] debug_writer_meta, debug_writer_sample;
 reg [15:0] debug_reader_meta, debug_reader_sample;
 reg [15:0] debug_error_meta, debug_error_sample;
 reg [15:0] debug_writer_sync, debug_reader_sync, debug_error_sync;
+reg [7:0] debug_probe_meta, debug_probe_sync;
+reg [15:0] probe_sample_meta, probe_sample_sync;
+reg reader_init_meta, reader_init_sync;
+reg frame_write_complete_meta, frame_write_complete_sync;
+reg reader_owns_meta, reader_owns_sync;
+reg writer_init_meta, writer_init_sync;
+reg writer_busy_meta, writer_busy_sync;
+reg writer_error_meta, writer_error_sync;
+reg [2:0] writer_error_reason_meta, writer_error_reason_sync;
+reg producer_free_stall_meta, producer_free_stall_sync;
+reg producer_writer_stall_meta, producer_writer_stall_sync;
 always @(posedge clk_video) begin
 	if (reset) begin
 		debug_writer_meta <= 0; debug_writer_sample <= 0;
 		debug_reader_meta <= 0; debug_reader_sample <= 0;
 		debug_error_meta <= 0; debug_error_sample <= 0;
 		debug_writer_sync <= 0; debug_reader_sync <= 0; debug_error_sync <= 0;
+		debug_probe_meta <= 0; debug_probe_sync <= 0;
+		probe_sample_meta <= 0; probe_sample_sync <= 0;
+		reader_init_meta <= 0; reader_init_sync <= 0;
+		frame_write_complete_meta <= 0; frame_write_complete_sync <= 0;
+		reader_owns_meta <= 0; reader_owns_sync <= 0;
+		writer_init_meta <= 0; writer_init_sync <= 0;
+		writer_busy_meta <= 0; writer_busy_sync <= 0;
+		writer_error_meta <= 0; writer_error_sync <= 0;
+		writer_error_reason_meta <= 0; writer_error_reason_sync <= 0;
+		producer_free_stall_meta <= 0; producer_free_stall_sync <= 0;
+		producer_writer_stall_meta <= 0; producer_writer_stall_sync <= 0;
 	end else begin
 		debug_writer_meta <= debug_writer_count;
 		debug_writer_sample <= debug_writer_meta;
@@ -293,20 +384,75 @@ always @(posedge clk_video) begin
 		debug_reader_sample <= debug_reader_meta;
 		debug_error_meta <= debug_error_count;
 		debug_error_sample <= debug_error_meta;
+		debug_probe_meta <= probe_status;
+		probe_sample_meta <= probe_sample_word;
+		reader_init_meta <= reader_init_done;
+		frame_write_complete_meta <= frame_write_complete;
+		reader_owns_meta <= reader_owns_sdram;
+		writer_init_meta <= sdram_init_done;
+		writer_busy_meta <= writer_busy;
+		writer_error_meta <= writer_error | sdram_error;
+		writer_error_reason_meta <= writer_error_reason;
+		producer_free_stall_meta <= producer_stalled_waiting_for_free_line;
+		producer_writer_stall_meta <= producer_stalled_waiting_for_writer;
 		if (raster_frame_start) begin
 			debug_writer_sync <= debug_writer_sample;
 			debug_reader_sync <= debug_reader_sample;
 			debug_error_sync <= debug_error_sample;
+			debug_probe_sync <= debug_probe_meta;
+			probe_sample_sync <= probe_sample_meta;
+			reader_init_sync <= reader_init_meta;
+			frame_write_complete_sync <= frame_write_complete_meta;
+			reader_owns_sync <= reader_owns_meta;
+			writer_init_sync <= writer_init_meta;
+			writer_busy_sync <= writer_busy_meta;
+			writer_error_sync <= writer_error_meta;
+			writer_error_reason_sync <= writer_error_reason_meta;
+			producer_free_stall_sync <= producer_free_stall_meta;
+			producer_writer_stall_sync <= producer_writer_stall_meta;
 		end
 	end
 end
 
 wire debug_override; wire [15:0] debug_pixel;
-framebuffer_debug_overlay debug_overlay(.x(raster_x),.y(raster_y),.active(raster_de),.writer_count(debug_writer_sync),.reader_count(debug_reader_sync),.error_count(debug_error_sync),.underflow_count(debug_underflow_count),.override(debug_override),.pixel(debug_pixel));
+framebuffer_debug_overlay debug_overlay(.x(raster_x),.y(raster_y),.active(raster_de),.writer_count(debug_writer_sync),.reader_count(debug_reader_sync),.error_count(debug_error_sync),.underflow_count(debug_underflow_count),.probe_status(debug_probe_sync),.override(debug_override),.pixel(debug_pixel));
 // This switch isolates the core-to-HDMI raster path from SDRAM. The direct
 // source intentionally reuses the framebuffer's test pattern so a white edge
 // and the drifting interior have the same expected appearance in both modes.
-wire video_raster_test = status[3];
+wire [1:0] video_source = status[4:3];
+wire video_raster_test = (video_source == 2'd1);
+// This mode deliberately bypasses the descriptor/y-coordinate condition and
+// the on-screen diagnostic overlay. It answers one narrow board question:
+// what values are physically leaving the consumer line buffers?
+wire video_sdram_sample = (video_source == 2'd2);
+wire video_raw_scanout = (video_source == 2'd3);
+// Full-screen state indication for the direct SDRAM sample source. Keeping
+// these states out of the framebuffer path avoids relying on the overlay
+// while the SDRAM reader is still being brought up.
+wire [15:0] video_sdram_sample_pixel = !writer_init_sync ? 16'hffff :
+									 writer_error_reason_sync[0] ? 16'hf800 :
+									 writer_error_reason_sync[1] ? 16'hf81f :
+									 writer_error_reason_sync[2] ? 16'hffe0 :
+									 writer_error_sync ? 16'h8410 :
+                                         producer_free_stall_sync ? 16'hf81f :
+                                         producer_writer_stall_sync ? 16'h07ff :
+                                         (!frame_write_complete_sync && writer_busy_sync) ? 16'h001f :
+                                         !frame_write_complete_sync ? 16'h07e0 :
+                                         !reader_owns_sync ? 16'hffe0 :
+                                         !reader_init_sync ? 16'h001f :
+                                         (debug_probe_sync == 8'h10) ? 16'hffe0 :
+                                         (debug_probe_sync == 8'h11) ? 16'hf81f :
+                                         (debug_probe_sync == 8'h12) ? 16'h07ff :
+                                         (debug_probe_sync == 8'hee) ? 16'hf800 :
+                                         probe_sample_sync;
+// Before handoff, each writer completion is one complete framebuffer line.
+// Draw the count as a top-down ruler so this diagnostic immediately shows
+// whether the producer stopped at a specific line or reached all 720 lines.
+wire producer_progress_active = !frame_write_complete_sync &&
+							  ({6'd0, raster_y} < debug_writer_sync);
+wire [15:0] video_sdram_diagnostic_pixel = !frame_write_complete_sync ?
+                                             (producer_progress_active ? video_sdram_sample_pixel : 16'h0000) :
+                                             video_sdram_sample_pixel;
 reg [7:0] raster_test_frame_index;
 always @(posedge clk_video) begin
 	if (reset)
@@ -335,15 +481,15 @@ end
 wire scanout_start = raster_frame_start && consumer_primed_sync_2 && !scanout_started;
 
 framebuffer_consumer_read_path_dual_clock consumer (
-	.fill_clk(clk_sdram), .fill_reset(reader_reset_sdram | !reader_init_done),
+	.fill_clk(clk_sdram), .fill_reset(reader_reset_sdram | !reader_init_done | !probe_passed),
 	.scanout_clk(clk_video), .scanout_reset(reset | !framebuffer_ready),
 	.scanout_start, .scanout_line_advance(raster_de && raster_x == 0 && raster_y != 0 && scanout_started),
 	.scanout_x(raster_x), .scanout_pixel, .scanout_pixel_valid, .scanout_line_y,
 	.scanout_underflow, .scanout_skipped_lines, .consumer_primed,
-	.req_valid(reader_req_valid), .req_ready(reader_req_ready), .req_write(reader_req_write),
-	.req_byte_address(reader_req_byte_address), .req_words(reader_req_words), .req_tag(reader_req_tag),
-	.read_valid(reader_read_valid), .read_ready(reader_read_ready), .read_data(reader_read_data),
-	.completion_valid(reader_completion_valid), .completion_ready(reader_completion_ready),
+	.req_valid(consumer_req_valid), .req_ready(consumer_req_ready), .req_write(consumer_req_write),
+	.req_byte_address(consumer_req_byte_address), .req_words(consumer_req_words), .req_tag(consumer_req_tag),
+	.read_valid(reader_read_valid), .read_ready(consumer_read_ready), .read_data(reader_read_data),
+	.completion_valid(reader_completion_valid), .completion_ready(consumer_completion_ready),
 	.completion_tag(reader_completion_tag), .completion_words(reader_completion_words),
 	.completion_error(reader_completion_error), .reader_busy, .reader_error,
 	.consumer_waiting_for_output_release, .consumer_overwrite_error,
@@ -352,10 +498,10 @@ framebuffer_consumer_read_path_dual_clock consumer (
 
 framebuffer_sdram_phy sdram_phy (
 	.clk(clk_sdram), .capture_clk(clk_sdram_capture), .producer_owns(producer_owns_sdram), .reader_owns(reader_owns_sdram),
-	.producer_a(producer_sdram_a), .producer_ba(producer_sdram_ba), .producer_cke(producer_sdram_cke),
-	.producer_ncs(producer_sdram_ncs), .producer_nras(producer_sdram_nras), .producer_ncas(producer_sdram_ncas),
-	.producer_nwe(producer_sdram_nwe), .producer_dqml(producer_sdram_dqml), .producer_dqmh(producer_sdram_dqmh),
-	.producer_dq_out(producer_sdram_dq_out), .producer_dq_oe(producer_sdram_dq_oe),
+	.producer_a(producer_protocol_a), .producer_ba(producer_protocol_ba), .producer_cke(producer_protocol_cke),
+	.producer_ncs(producer_protocol_ncs), .producer_nras(producer_protocol_nras), .producer_ncas(producer_protocol_ncas),
+	.producer_nwe(producer_protocol_nwe), .producer_dqml(producer_protocol_dqml), .producer_dqmh(producer_protocol_dqmh),
+	.producer_dq_out(producer_protocol_dq_out), .producer_dq_oe(producer_protocol_dq_oe),
 	.reader_a(reader_sdram_a), .reader_ba(reader_sdram_ba), .reader_cke(reader_sdram_cke),
 	.reader_ncs(reader_sdram_ncs), .reader_nras(reader_sdram_nras), .reader_ncas(reader_sdram_ncas),
 	.reader_nwe(reader_sdram_nwe), .reader_dqml(reader_sdram_dqml), .reader_dqmh(reader_sdram_dqmh),
@@ -366,12 +512,12 @@ framebuffer_sdram_phy sdram_phy (
 
 assign CLK_VIDEO = clk_video;
 assign CE_PIXEL = 1'b1;
-assign VGA_DE = raster_de && (video_raster_test || debug_override ||
-	(scanout_pixel_valid && (scanout_line_y == raster_y)));
+assign VGA_DE = raster_de && (video_raster_test || video_sdram_sample ||
+	video_raw_scanout || scanout_pixel_valid);
 assign VGA_HS = raster_hsync;
 assign VGA_VS = raster_vsync;
 wire [15:0] video_pixel = video_raster_test ? raster_test_pixel :
-	debug_override ? debug_pixel : scanout_pixel;
+	video_sdram_sample ? video_sdram_diagnostic_pixel : scanout_pixel;
 assign VGA_R = VGA_DE ? {video_pixel[15:11],video_pixel[15:13]} : 0;
 assign VGA_G = VGA_DE ? {video_pixel[10:5],video_pixel[10:9]} : 0;
 assign VGA_B = VGA_DE ? {video_pixel[4:0],video_pixel[4:2]} : 0;

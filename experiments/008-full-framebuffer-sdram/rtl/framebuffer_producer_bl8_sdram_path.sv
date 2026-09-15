@@ -10,7 +10,11 @@ module framebuffer_producer_bl8_sdram_path #(
     parameter longint unsigned SDRAM_FREQ_HZ = 100_000_000,
     parameter integer SDRAM_POWERUP_US = 200,
     parameter longint unsigned REFRESH_INTERVAL_CYCLES = (SDRAM_FREQ_HZ * 70) / 10_000_000,
-    parameter integer STOP_AFTER_ONE_FRAME = 0
+    parameter integer STOP_AFTER_ONE_FRAME = 0,
+    // Keep the proven direct-PHY arrangement for standalone writer tests.
+    // The experiment top disables it and sends this protocol bundle to the
+    // sole shared physical PHY instead.
+    parameter integer USE_INTERNAL_PHY = 1
 ) (
     input  logic        machine_clk,
     input  logic        sdram_clk,
@@ -28,6 +32,14 @@ module framebuffer_producer_bl8_sdram_path #(
     output logic        producer_stalled_waiting_for_writer,
     output logic        writer_busy,
     output logic        writer_error,
+    output logic [2:0]  writer_error_reason,
+
+    output logic [12:0] protocol_a,
+    output logic [1:0]  protocol_ba,
+    output logic        protocol_cke, protocol_ncs, protocol_nras, protocol_ncas, protocol_nwe,
+    output logic        protocol_dqml, protocol_dqmh,
+    output logic [15:0] protocol_dq_out,
+    output logic        protocol_dq_oe,
 
     output logic [12:0] SDRAM_A,
     output logic [1:0]  SDRAM_BA,
@@ -129,6 +141,7 @@ module framebuffer_producer_bl8_sdram_path #(
         .producer_stalled_waiting_for_writer(producer_stalled_waiting_for_writer),
         .writer_busy(writer_busy),
         .writer_error(writer_error),
+        .writer_error_reason(writer_error_reason),
         .line_write_complete(line_write_complete),
         .line_write_complete_y(line_write_complete_y)
     );
@@ -186,31 +199,48 @@ module framebuffer_producer_bl8_sdram_path #(
         .phy_dq_oe(phy_dq_oe)
     );
 
-    framebuffer_sdram_write_phy phy (
-        .clk(sdram_clk),
-        .protocol_a(phy_a),
-        .protocol_ba(phy_ba),
-        .protocol_cke(phy_cke),
-        .protocol_ncs(phy_ncs),
-        .protocol_nras(phy_nras),
-        .protocol_ncas(phy_ncas),
-        .protocol_nwe(phy_nwe),
-        .protocol_dqml(phy_dqml),
-        .protocol_dqmh(phy_dqmh),
-        .protocol_dq_out(phy_dq_out),
-        .protocol_dq_oe(phy_dq_oe),
-        .SDRAM_A(SDRAM_A),
-        .SDRAM_BA(SDRAM_BA),
-        .SDRAM_CKE(SDRAM_CKE),
-        .SDRAM_nCS(SDRAM_nCS),
-        .SDRAM_nRAS(SDRAM_nRAS),
-        .SDRAM_nCAS(SDRAM_nCAS),
-        .SDRAM_nWE(SDRAM_nWE),
-        .SDRAM_DQML(SDRAM_DQML),
-        .SDRAM_DQMH(SDRAM_DQMH),
-        .SDRAM_DQ(SDRAM_DQ),
-        .SDRAM_CLK(SDRAM_CLK),
-        .SDRAM_DQ_OUT(sdram_dq_out),
-        .SDRAM_DQ_OE(sdram_dq_oe)
-    );
+    assign protocol_a = phy_a;
+    assign protocol_ba = phy_ba;
+    assign protocol_cke = phy_cke;
+    assign protocol_ncs = phy_ncs;
+    assign protocol_nras = phy_nras;
+    assign protocol_ncas = phy_ncas;
+    assign protocol_nwe = phy_nwe;
+    assign protocol_dqml = phy_dqml;
+    assign protocol_dqmh = phy_dqmh;
+    assign protocol_dq_out = phy_dq_out;
+    assign protocol_dq_oe = phy_dq_oe;
+
+    generate
+        if (USE_INTERNAL_PHY) begin : g_direct_writer_phy
+            framebuffer_sdram_write_phy phy (
+                .clk(sdram_clk),
+                .protocol_a(phy_a), .protocol_ba(phy_ba), .protocol_cke(phy_cke),
+                .protocol_ncs(phy_ncs), .protocol_nras(phy_nras), .protocol_ncas(phy_ncas),
+                .protocol_nwe(phy_nwe), .protocol_dqml(phy_dqml), .protocol_dqmh(phy_dqmh),
+                .protocol_dq_out(phy_dq_out), .protocol_dq_oe(phy_dq_oe),
+                .SDRAM_A(SDRAM_A), .SDRAM_BA(SDRAM_BA), .SDRAM_CKE(SDRAM_CKE),
+                .SDRAM_nCS(SDRAM_nCS), .SDRAM_nRAS(SDRAM_nRAS), .SDRAM_nCAS(SDRAM_nCAS),
+                .SDRAM_nWE(SDRAM_nWE), .SDRAM_DQML(SDRAM_DQML), .SDRAM_DQMH(SDRAM_DQMH),
+                .SDRAM_DQ(SDRAM_DQ), .SDRAM_CLK(SDRAM_CLK),
+                .SDRAM_DQ_OUT(sdram_dq_out), .SDRAM_DQ_OE(sdram_dq_oe)
+            );
+        end else begin : g_shared_writer_phy
+            // These compatibility ports are deliberately inert in shared-PHY
+            // mode. The protocol bundle above is the only path to board pins.
+            assign SDRAM_A = '0;
+            assign SDRAM_BA = '0;
+            assign SDRAM_CKE = 1'b0;
+            assign SDRAM_nCS = 1'b1;
+            assign SDRAM_nRAS = 1'b1;
+            assign SDRAM_nCAS = 1'b1;
+            assign SDRAM_nWE = 1'b1;
+            assign SDRAM_DQML = 1'b1;
+            assign SDRAM_DQMH = 1'b1;
+            assign SDRAM_DQ = 16'hzzzz;
+            assign SDRAM_CLK = 1'b0;
+            assign sdram_dq_out = phy_dq_out;
+            assign sdram_dq_oe = phy_dq_oe;
+        end
+    endgenerate
 endmodule

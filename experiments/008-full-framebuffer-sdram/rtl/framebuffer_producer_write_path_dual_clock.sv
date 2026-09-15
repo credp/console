@@ -34,6 +34,7 @@ module framebuffer_producer_write_path_dual_clock #(
     output logic        producer_stalled_waiting_for_writer,
     output logic        writer_busy,
     output logic        writer_error,
+    output logic [2:0]  writer_error_reason,
     output logic        line_write_complete,
     output logic [9:0]  line_write_complete_y
 );
@@ -81,6 +82,6 @@ module framebuffer_producer_write_path_dual_clock #(
         .write_byte_enable(write_byte_enable), .completion_valid(completion_valid),
         .completion_ready(completion_ready), .completion_tag(completion_tag),
         .completion_words(completion_words), .completion_error(completion_error),
-        .busy(writer_busy), .error(writer_error)
+        .busy(writer_busy), .error(writer_error), .error_reason(writer_error_reason)
     );
 endmodule

@@ -18,13 +18,18 @@ module framebuffer_pattern_pixel #(
                         (x == FRAMEBUFFER_LAST_X) ||
                         (y == 10'd0) ||
                         (y == FRAMEBUFFER_LAST_Y);
+    // A shared raster/framebuffer locator. It makes a coordinate slip visible
+    // immediately when comparing the direct raster source with SDRAM scanout.
+    wire center_locator = (x >= 11'd632) && (x < 11'd648) &&
+                          (y >= 10'd352) && (y < 10'd368) &&
+                          ((x[3:0] == 4'd7) || (y[3:0] == 4'd7));
 
-    // The interior deliberately uses only coordinates and a slow frame
-    // counter. Wrong line order, stale frames, or edge timing mistakes should
-    // be visible without needing a complicated renderer.
-    wire [4:0] red = x[7:3] + frame_index[4:0];
-    wire [5:0] green = y[7:2] + {1'b0, frame_index[4:0]};
-    wire [4:0] blue = (x[6:2] ^ y[6:2]) + frame_index[4:0];
+    // Use coarse coordinate cells, rather than fine stripes, so a missing or
+    // repeated raster coordinate is visible at a glance. The small frame
+    // term keeps the interior slowly moving without obscuring that grid.
+    wire [4:0] red = {x[10:8], 2'b00} + frame_index[4:0];
+    wire [5:0] green = {y[9:7], 3'b000} + {frame_index[4:0], 1'b0};
+    wire [4:0] blue = {(x[10:8] ^ y[9:7]), 2'b00} + frame_index[4:0];
 
-    assign pixel = border_pixel ? PIXEL_WHITE : {red, green, blue};
+    assign pixel = border_pixel ? PIXEL_WHITE : center_locator ? 16'hf81f : {red, green, blue};
 endmodule

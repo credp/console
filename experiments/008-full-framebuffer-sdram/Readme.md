@@ -52,6 +52,51 @@ The border should make cropping, off-by-one addresses, line delay, and HDMI
 coupling mistakes visible. The drifting interior should make stale or repeated
 frames visible without adding a complicated renderer.
 
+## Current Hardware Checkpoint
+
+The direct 720p raster is now stable at the intended pixel clock, with square
+pixels in MiSTer's `Original` aspect-ratio mode. This proves the HDMI timing
+and direct pattern path independently of SDRAM scanout.
+
+The first integrated framebuffer builds did not produce a trustworthy image.
+The direct single-word SDRAM sample was stable enough to show that a read value
+could reach the video path, but it was deliberately too weak to prove that the
+framebuffer contents were correct. A headless full-frame verifier has therefore
+been added: after the one-shot writer finishes, it reads all 921,600 RGB565
+words through the normal reader path and compares them with the frame-zero
+producer pattern. Consumer fill and scanout remain held in reset until that
+comparison passes. A black raw-line-buffer source before verification is
+therefore intentional, not an independent scanout result.
+
+Board diagnostics then showed that the writer was not reaching its final-line
+handoff. The first diagnostic was a red completion error. Investigation found
+an architectural integration mistake: the producer's local PHY registered its
+signals before client selection, while the shared PHY drove physical SDRAM
+pins combinationally after that selection. This was not the promised
+one-owner-per-pin PHY boundary.
+
+The current 008 RTL repairs that boundary. The producer and reader export
+protocol bundles; `framebuffer_sdram_phy` selects a bundle and then registers
+address, bank, command, masks, DQ data, and DQ output-enable at the physical
+boundary. The physical forwarded clock and DQ input-DDIO capture remain there
+as well. The producer-only pin-model regression and a shared-PHY handoff
+regression pass with this arrangement.
+
+On the latest board run the red completion error disappeared, but the writer
+still remained active/stalled without reaching `frame_write_complete`.
+Blue means active writer traffic, cyan means the producer is waiting for the
+writer/backend, and green means an incomplete frame while no write is active.
+Those states are diagnostic observations, not evidence that SDRAM contents are
+valid.
+
+Experiment 009 is a non-destructive writer-only isolation fork of this exact
+checkpoint. It keeps the framework, 142.857 MHz SDRAM PLL, one-shot producer,
+shared PHY, pin constraints, and stable raster, but instantiates no reader,
+cache, verifier, or consumer. Its top-down progress display makes each
+completed write line visible. If 009 fails, debug the writer/PHY integration
+there until it completes a frame. If it passes, retain it as the known-good
+baseline and reintroduce reader-side blocks one isolated experiment at a time.
+
 ## RTL style rules
 
 Write RTL so it can be explained to a novice who knows basic digital logic and

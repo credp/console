@@ -43,7 +43,10 @@ module framebuffer_line_write_sequencer #(
     input  logic                       completion_error,
 
     output logic                       busy,
-    output logic                       error
+    output logic                       error,
+    // Sticky completion-contract detail for board bring-up:
+    // bit 0: backend declared an error, bit 1: tag mismatch, bit 2: count mismatch.
+    output logic [2:0]                 error_reason
 );
     localparam integer CHUNKS_PER_LINE = FRAMEBUFFER_WIDTH / WRITE_CHUNK_WORDS;
     localparam integer CHUNK_INDEX_WIDTH = (CHUNKS_PER_LINE > 1) ? $clog2(CHUNKS_PER_LINE) : 1;
@@ -117,6 +120,7 @@ module framebuffer_line_write_sequencer #(
             writer_read_x <= '0;
             write_data_q <= 16'h0000;
             error <= 1'b0;
+            error_reason <= 3'b000;
         end else begin
             case (state)
                 WRITER_IDLE: begin
@@ -169,6 +173,11 @@ module framebuffer_line_write_sequencer #(
                             completion_tag != expected_completion_tag ||
                             completion_words != 16'(WRITE_CHUNK_WORDS)) begin
                             error <= 1'b1;
+                            error_reason[0] <= error_reason[0] | completion_error;
+                            error_reason[1] <= error_reason[1] |
+                                               (completion_tag != expected_completion_tag);
+                            error_reason[2] <= error_reason[2] |
+                                               (completion_words != 16'(WRITE_CHUNK_WORDS));
                         end
 
                         if (last_chunk_in_line) begin

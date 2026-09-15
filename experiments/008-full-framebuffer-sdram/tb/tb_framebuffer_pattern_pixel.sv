@@ -27,10 +27,14 @@ module tb_framebuffer_pattern_pixel;
                 (sample_y == 10'd0) ||
                 (sample_y == 10'd719)) begin
                 expected_pixel = 16'hffff;
+            end else if ((sample_x >= 11'd632) && (sample_x < 11'd648) &&
+                         (sample_y >= 10'd352) && (sample_y < 10'd368) &&
+                         ((sample_x[3:0] == 4'd7) || (sample_y[3:0] == 4'd7))) begin
+                expected_pixel = 16'hf81f;
             end else begin
-                red = sample_x[7:3] + sample_frame[4:0];
-                green = sample_y[7:2] + {1'b0, sample_frame[4:0]};
-                blue = (sample_x[6:2] ^ sample_y[6:2]) + sample_frame[4:0];
+                red = {sample_x[10:8], 2'b00} + sample_frame[4:0];
+                green = {sample_y[9:7], 3'b000} + {sample_frame[4:0], 1'b0};
+                blue = {(sample_x[10:8] ^ sample_y[9:7]), 2'b00} + sample_frame[4:0];
                 expected_pixel = {red, green, blue};
             end
         end
